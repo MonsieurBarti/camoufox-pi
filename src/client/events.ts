@@ -65,11 +65,21 @@ export function createEventEmitter(): CamoufoxEventEmitter {
 	// Listener errors are logged via console.error but do NOT propagate —
 	// they must never mask a CamoufoxErrorBox re-thrown to the caller.
 	ee.on("error", () => undefined);
+	// Listener isolation: a listener that throws (sync or async) must not mask
+	// a CamoufoxErrorBox re-thrown to the caller, nor bring down other
+	// listeners. Each registration is assumed to use a unique function
+	// reference — re-registering the same reference via both on() and once()
+	// would collide in the WeakMap below. Support isn't needed in practice.
 	const wrap =
 		<K extends keyof CamoufoxEvents>(listener: CamoufoxEvents[K]) =>
 		(payload: Parameters<CamoufoxEvents[K]>[0]) => {
 			try {
-				(listener as (p: Parameters<CamoufoxEvents[K]>[0]) => void)(payload);
+				const result = (listener as (p: Parameters<CamoufoxEvents[K]>[0]) => unknown)(payload);
+				if (result && typeof (result as Promise<unknown>).then === "function") {
+					(result as Promise<unknown>).catch((err) => {
+						console.error("[camoufox] async event listener rejected:", err);
+					});
+				}
 			} catch (err) {
 				console.error("[camoufox] event listener threw:", err);
 			}

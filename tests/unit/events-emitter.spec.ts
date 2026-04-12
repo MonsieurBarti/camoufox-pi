@@ -113,4 +113,33 @@ describe("CamoufoxEventEmitter", () => {
 		ee.emit("binary_download_progress", bdp);
 		expect(true).toBe(true);
 	});
+
+	it("isolates async listener rejections (logs, does not crash)", async () => {
+		const ee = createEventEmitter();
+		const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+		const asyncThrowing = async () => {
+			throw new Error("async boom");
+		};
+		const ok = vi.fn();
+		ee.on("search", asyncThrowing);
+		ee.on("search", ok);
+		const payload: SearchEvent = {
+			spanId: "eeeeeeee",
+			engine: "duckduckgo",
+			query: "q",
+			maxResults: 10,
+			durationMs: 1,
+			resultCount: 0,
+			atLimit: false,
+		};
+		expect(() => ee.emit("search", payload)).not.toThrow();
+		// Allow the rejected promise's .catch to run.
+		await new Promise((r) => setTimeout(r, 0));
+		expect(ok).toHaveBeenCalled();
+		expect(errSpy).toHaveBeenCalledWith(
+			expect.stringContaining("async event listener rejected"),
+			expect.any(Error),
+		);
+		errSpy.mockRestore();
+	});
 });
