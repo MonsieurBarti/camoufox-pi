@@ -18,9 +18,14 @@ describe("library exports", () => {
 
 	it("exposes the service and factories", () => {
 		const service = new CamoufoxService();
-		expect(createAllTools(service)).toEqual([]);
+		expect(typeof service.getConfig).toBe("function");
 		expect(createAllCommands(service)).toEqual([]);
 		expect(createAllHooks(service)).toEqual([]);
+	});
+
+	it("createAllTools throws if the service is not initialized", () => {
+		const service = new CamoufoxService();
+		expect(() => createAllTools(service)).toThrow(/initialize/);
 	});
 });
 
