@@ -83,12 +83,24 @@ export function makeFakeLauncher(
 			},
 			async $$eval<T>(
 				selector: string,
-				_evaluator: (els: unknown[], ...args: unknown[]) => T,
+				evaluator: (els: unknown[], ...args: unknown[]) => T,
+				...args: unknown[]
 			): Promise<T> {
 				const behavior = pageBehavior(currentUrl);
 				const results = behavior.evalResults;
 				if (results && selector in results) {
-					return results[selector] as T;
+					const value = results[selector];
+					// If the value is an array of plain objects (no querySelector prop),
+					// assume it's the already-parsed output and skip the evaluator.
+					if (
+						Array.isArray(value) &&
+						value.every(
+							(v) => v !== null && typeof v === "object" && !("querySelector" in (v as object)),
+						)
+					) {
+						return value as unknown as T;
+					}
+					return evaluator(value as unknown[], ...args);
 				}
 				return [] as unknown as T;
 			},

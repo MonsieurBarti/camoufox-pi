@@ -1,6 +1,8 @@
 import type { Browser, BrowserContext, Page } from "playwright-core";
 
 import { CamoufoxErrorBox, mapPlaywrightError } from "../errors.js";
+import { duckduckgoAdapter } from "../search/adapters/duckduckgo.js";
+import type { RawResult } from "../search/types.js";
 import type { CamoufoxConfig } from "../types.js";
 import { DEFAULT_CONFIG } from "../types.js";
 import type { Launcher } from "./launcher.js";
@@ -62,6 +64,28 @@ export class CamoufoxClient {
 		try {
 			const html = await page.content();
 			return { html, status: response.status(), finalUrl: response.url() };
+		} finally {
+			cleanup();
+			await page.close().catch(() => undefined);
+		}
+	}
+
+	async search(
+		query: string,
+		opts: { signal: AbortSignal; maxResults?: number; timeoutMs?: number },
+	): Promise<{ results: RawResult[]; engine: "duckduckgo"; query: string }> {
+		await this.ensureReady(opts.signal);
+		const maxResults = Math.max(1, Math.min(50, opts.maxResults ?? 10));
+		const adapter = duckduckgoAdapter;
+		const url = adapter.buildUrl(query);
+		const { page, cleanup } = await this.navigate(url, {
+			signal: opts.signal,
+			timeoutMs: opts.timeoutMs ?? this.config.timeoutMs,
+			waitUntil: adapter.waitStrategy.readyState,
+		});
+		try {
+			const results = (await adapter.parseResults(page, maxResults)).slice(0, maxResults);
+			return { results, engine: "duckduckgo", query };
 		} finally {
 			cleanup();
 			await page.close().catch(() => undefined);
