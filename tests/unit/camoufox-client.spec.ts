@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { CamoufoxClient } from "../../src/client/camoufox-client.js";
 import { CamoufoxErrorBox } from "../../src/errors.js";
 import { makeFakeLauncher } from "../helpers/fake-launcher.js";
+import { safeLookup } from "../helpers/safe-lookup.js";
 
 describe("CamoufoxClient lifecycle", () => {
 	it("starts not-alive, becomes alive after ensureReady", async () => {
@@ -88,5 +89,32 @@ describe("CamoufoxClient lifecycle", () => {
 		// registered on fake controls via browser.close() → controls.connected = false.
 		expect(launcher.fake.launchCount).toBe(1);
 		expect(launcher.fake.connected).toBe(false);
+	});
+});
+
+describe("CamoufoxClient — span IDs", () => {
+	it("mints a distinct spanId per fetchUrl op", async () => {
+		const launcher = makeFakeLauncher({
+			pageBehavior: () => ({ status: 200, html: "<html></html>", finalUrl: "https://x.test/" }),
+		});
+		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
+		const ids: string[] = [];
+		client.events.on("fetch_url", (e) => ids.push(e.spanId));
+		await client.fetchUrl("https://x.test/", { signal: new AbortController().signal });
+		await client.fetchUrl("https://x.test/", { signal: new AbortController().signal });
+		expect(ids).toHaveLength(2);
+		expect(ids[0]).not.toBe(ids[1]);
+	});
+
+	it("browser_launch fires exactly once with a valid spanId across multiple ensureReady calls", async () => {
+		const launcher = makeFakeLauncher();
+		const client = new CamoufoxClient({ launcher });
+		const launches: string[] = [];
+		client.events.on("browser_launch", (e) => launches.push(e.spanId));
+		await client.ensureReady();
+		await client.ensureReady();
+		await client.ensureReady();
+		expect(launches).toHaveLength(1);
+		expect(launches[0]).toMatch(/^[0-9a-f]{8}$/);
 	});
 });
