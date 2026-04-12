@@ -25,6 +25,34 @@ describe("library exports", () => {
 	});
 });
 
+describe("milestone-2 public API exports", () => {
+	it("exports CamoufoxClient, createClient, RealLauncher as values", async () => {
+		const lib = await import("../../src/index.js");
+		expect(typeof lib.CamoufoxClient).toBe("function");
+		expect(typeof lib.createClient).toBe("function");
+		expect(typeof lib.RealLauncher).toBe("function");
+	});
+
+	it("createClient returns a CamoufoxClient with a typed events emitter", async () => {
+		const lib = await import("../../src/index.js");
+		const client = lib.createClient({ launcher: makeFakeLauncher() });
+		expect(client).toBeInstanceOf(lib.CamoufoxClient);
+		expect(typeof client.events.on).toBe("function");
+		expect(typeof client.events.off).toBe("function");
+		expect(typeof client.events.emit).toBe("function");
+		await client.close();
+	});
+
+	it("exposes checkHealth on the client instance", async () => {
+		const lib = await import("../../src/index.js");
+		const client = lib.createClient({ launcher: makeFakeLauncher() });
+		expect(typeof client.checkHealth).toBe("function");
+		const health = await client.checkHealth();
+		expect(health.status).toMatch(/launching|ready/);
+		await client.close();
+	});
+});
+
 describe("wrapTool boundary", () => {
 	it("throws CamoufoxErrorBox on invalid input and threads the signal on valid", async () => {
 		const schema = Type.Object({ url: Type.String({ format: "uri" }) });
