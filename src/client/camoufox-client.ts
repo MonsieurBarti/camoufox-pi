@@ -17,6 +17,20 @@ import {
 import type { Launcher } from "./launcher.js";
 import { combineSignals } from "./signal.js";
 
+export interface HealthStatus {
+	status: "launching" | "ready" | "failed" | "closed";
+	browserConnected: boolean;
+	browserVersion: string | null;
+	launchedAt: number | null;
+	uptimeMs: number | null;
+	lastError: import("../errors.js").CamoufoxError | null;
+	probe?: {
+		ok: boolean;
+		roundTripMs: number;
+		error: import("../errors.js").CamoufoxError | null;
+	};
+}
+
 interface ReadyState {
 	status: "idle" | "launching" | "ready" | "failed" | "closed";
 	browser?: Browser;
@@ -50,6 +64,28 @@ export class CamoufoxClient {
 
 	isAlive(): boolean {
 		return this.state.status === "ready" && this.state.browser?.isConnected() === true;
+	}
+
+	async checkHealth(opts: { probe?: boolean; signal?: AbortSignal } = {}): Promise<HealthStatus> {
+		const status: HealthStatus["status"] =
+			this.state.status === "idle" ? "launching" : this.state.status;
+		const snapshot: HealthStatus = {
+			status,
+			browserConnected:
+				this.state.status === "ready" ? this.state.browser?.isConnected() === true : false,
+			browserVersion: this.state.version ?? null,
+			launchedAt: this.state.launchedAt ?? null,
+			uptimeMs:
+				this.state.status === "ready" && this.state.launchedAt
+					? Date.now() - this.state.launchedAt
+					: null,
+			lastError: this.state.status === "failed" && this.state.error ? this.state.error.err : null,
+		};
+		if (opts.probe) {
+			// Probe mode is implemented in Task 6. For now, snapshot-only.
+			void opts;
+		}
+		return snapshot;
 	}
 
 	private emitError(spanId: string, op: ErrorEvent["op"], err: unknown): void {
