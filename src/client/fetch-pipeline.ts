@@ -95,3 +95,33 @@ export async function extractSlice(
 	const outerHTML = await loc.evaluate((el: { outerHTML: string }) => el.outerHTML);
 	return { html: outerHTML };
 }
+
+export async function waitForSelectorOrThrow(
+	page: Page,
+	selector: string,
+	timeoutMs: number,
+): Promise<void> {
+	if (timeoutMs <= 0) {
+		throw new CamoufoxErrorBox({
+			type: "timeout",
+			phase: "wait_for_selector",
+			elapsedMs: 0,
+		});
+	}
+	try {
+		await page.locator(selector).first().waitFor({ state: "visible", timeout: timeoutMs });
+	} catch (err) {
+		if (err instanceof Error && err.name === "TimeoutError") {
+			throw new CamoufoxErrorBox({
+				type: "timeout",
+				phase: "wait_for_selector",
+				elapsedMs: timeoutMs,
+			});
+		}
+		throw new CamoufoxErrorBox({
+			type: "config_invalid",
+			field: "waitForSelector",
+			reason: err instanceof Error ? err.message : String(err),
+		});
+	}
+}
