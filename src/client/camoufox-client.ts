@@ -14,6 +14,7 @@ import {
 	createEventEmitter,
 	newSpanId,
 } from "./events.js";
+import { type RenderMode, resolveWaitUntil } from "./fetch-pipeline.js";
 import type { Launcher } from "./launcher.js";
 import { combineSignals } from "./signal.js";
 
@@ -148,6 +149,7 @@ export class CamoufoxClient {
 			timeoutMs?: number;
 			maxBytes?: number;
 			isolate?: boolean;
+			renderMode?: RenderMode;
 		},
 	): Promise<{
 		html: string;
@@ -180,6 +182,19 @@ export class CamoufoxClient {
 					reason: `must be integer in [1024, 52428800], got ${opts.maxBytes}`,
 				});
 			}
+			if (
+				opts.renderMode !== undefined &&
+				opts.renderMode !== "static" &&
+				opts.renderMode !== "render" &&
+				opts.renderMode !== "render-and-wait"
+			) {
+				throw new CamoufoxErrorBox({
+					type: "config_invalid",
+					field: "renderMode",
+					reason: `must be one of static|render|render-and-wait, got ${String(opts.renderMode)}`,
+				});
+			}
+			const renderMode: RenderMode = opts.renderMode ?? "render";
 			try {
 				await assertSafeTarget(url, this.ssrfLookup ? { lookup: this.ssrfLookup } : {});
 			} catch (err) {
@@ -197,7 +212,7 @@ export class CamoufoxClient {
 			} = {
 				signal: opts.signal,
 				timeoutMs: opts.timeoutMs ?? this.config.timeoutMs,
-				waitUntil: "load",
+				waitUntil: resolveWaitUntil(renderMode),
 			};
 			if (opts.isolate !== undefined) navOpts.isolate = opts.isolate;
 			const { page, response, cleanup } = await this.navigate(url, navOpts);
@@ -230,7 +245,7 @@ export class CamoufoxClient {
 					truncated: result.truncated,
 					isolate: opts.isolate ?? false,
 					durationMs: Date.now() - started,
-					renderMode: "render",
+					renderMode,
 					usedWaitForSelector: false,
 					usedSelector: false,
 					format: "html",
