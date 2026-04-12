@@ -230,6 +230,11 @@ export class CamoufoxClient {
 					truncated: result.truncated,
 					isolate: opts.isolate ?? false,
 					durationMs: Date.now() - started,
+					renderMode: "render",
+					usedWaitForSelector: false,
+					usedSelector: false,
+					format: "html",
+					screenshotBytes: null,
 				});
 				return result;
 			} catch (err) {

@@ -91,6 +91,11 @@ describe("CamoufoxEventEmitter", () => {
 			truncated: false,
 			isolate: false,
 			durationMs: 1,
+			renderMode: "render",
+			usedWaitForSelector: false,
+			usedSelector: false,
+			format: "html",
+			screenshotBytes: null,
 		};
 		expect(() => ee.emit("fetch_url", payload)).not.toThrow();
 		expect(throwing).toHaveBeenCalled();
