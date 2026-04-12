@@ -5,14 +5,21 @@
 import { launchOptions as camoufoxLaunchOptions } from "camoufox-js";
 import { type Browser, type BrowserContext, firefox } from "playwright-core";
 
+import type { BinaryDownloadProgressEvent } from "./events.js";
+
 export interface LaunchedBrowser {
 	readonly browser: Browser;
 	readonly context: BrowserContext;
 	readonly version: string;
 }
 
+export interface LaunchOpts {
+	readonly signal?: AbortSignal;
+	readonly onProgress?: (e: BinaryDownloadProgressEvent) => void;
+}
+
 export interface Launcher {
-	launch(): Promise<LaunchedBrowser>;
+	launch(opts?: LaunchOpts): Promise<LaunchedBrowser>;
 }
 
 export interface RealLauncherOptions {
@@ -27,6 +34,14 @@ export interface RealLauncherOptions {
  * launch options, then drives playwright-core's firefox.launch.
  * This is the ONLY file in the codebase that may import camoufox-js.
  * Spec: §2, §8.
+ *
+ * Note on onProgress: camoufox-js v0.9 does not expose a download progress
+ * hook on launchOptions(). Rather than introduce a fragile partial-file
+ * polling fallback now, we accept the opts for interface uniformity and
+ * simply never fire onProgress. The fake launcher fires synthetic events so
+ * the client-side plumbing is exercised end-to-end. When a future
+ * camoufox-js version exposes a hook, this is the only file that needs to
+ * change.
  */
 export class RealLauncher implements Launcher {
 	private readonly headless: boolean;
@@ -37,7 +52,7 @@ export class RealLauncher implements Launcher {
 		this.binaryPath = opts.binaryPath;
 	}
 
-	async launch(): Promise<LaunchedBrowser> {
+	async launch(_opts: LaunchOpts = {}): Promise<LaunchedBrowser> {
 		const launchOpts = (await camoufoxLaunchOptions({
 			headless: this.headless,
 			...(this.binaryPath !== undefined ? { executablePath: this.binaryPath } : {}),
