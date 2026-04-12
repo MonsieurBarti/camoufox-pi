@@ -1,6 +1,7 @@
 import type { TObject } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 
+import { RealLauncher } from "./client/launcher.js";
 import type { CommandContext, CommandDefinition } from "./commands/index.js";
 import { createAllCommands } from "./commands/index.js";
 import { CamoufoxErrorBox } from "./errors.js";
@@ -139,27 +140,27 @@ function wrapCommand(def: CommandDefinition): PiRegisteredCommand {
 // ---------------------------------------------------------------------------
 
 export default function camoufoxExtension(pi: PiExtensionApi): void {
-	const service = new CamoufoxService();
+	const service = new CamoufoxService({
+		launcherFactory: () => new RealLauncher(),
+	});
 
-	// Register all tools + commands.
-	for (const def of createAllTools(service)) {
-		pi.registerTool(wrapTool(def));
-	}
-	for (const def of createAllCommands(service)) {
-		pi.registerCommand(def.name, wrapCommand(def));
-	}
-
-	// Register hooks.
-	for (const hook of createAllHooks(service)) {
-		pi.on(hook.event, hook.handler);
-	}
-
-	// Lifecycle: initialize on session_start, cleanup on session_shutdown.
 	pi.on("session_start", async (_event, ctx) => {
 		const cwd = (ctx as { cwd?: string })?.cwd ?? pi.cwd ?? process.cwd();
 		await service.initialize(cwd);
 
-		// Check for extension updates
+		// Register tools + commands AFTER initialize so createAllTools can
+		// access service.getClient(). Per @mariozechner/pi-coding-agent docs,
+		// pi.registerTool() works after startup as well as during load.
+		for (const def of createAllTools(service)) {
+			pi.registerTool(wrapTool(def));
+		}
+		for (const def of createAllCommands(service)) {
+			pi.registerCommand(def.name, wrapCommand(def));
+		}
+		for (const hook of createAllHooks(service)) {
+			pi.on(hook.event, hook.handler);
+		}
+
 		const updateInfo = await checkForUpdates(pi);
 		if (updateInfo?.updateAvailable) {
 			(ctx as { ui?: { notify?: (message: string, level?: string) => void } }).ui?.notify?.(
