@@ -2,7 +2,11 @@
 // CamoufoxError values. Spec: §4.2, §5.1.
 
 export type CamoufoxError =
-	| { type: "timeout"; phase: "nav" | "wait_ready"; elapsedMs: number }
+	| {
+			type: "timeout";
+			phase: "nav" | "wait_ready" | "wait_for_selector" | "screenshot";
+			elapsedMs: number;
+	  }
 	| { type: "network"; cause: string; url: string }
 	| { type: "http"; status: number; url: string }
 	| { type: "browser_launch_failed"; stderr: string }
@@ -44,7 +48,7 @@ export class CamoufoxErrorBox extends Error {
 
 export interface MapContext {
 	readonly url?: string;
-	readonly phase?: "nav" | "wait_ready";
+	readonly phase?: "nav" | "wait_ready" | "wait_for_selector" | "screenshot";
 	readonly elapsedMs?: number;
 	readonly signal?: AbortSignal;
 }
