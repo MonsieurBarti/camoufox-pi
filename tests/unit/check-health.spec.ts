@@ -65,3 +65,43 @@ describe("CamoufoxClient.checkHealth — snapshot mode", () => {
 		expect(h.browserConnected).toBe(false);
 	});
 });
+
+describe("CamoufoxClient.checkHealth — probe mode", () => {
+	it("returns probe.ok=true and roundTripMs when about:blank succeeds", async () => {
+		const launcher = makeFakeLauncher({
+			pageBehavior: (url) => {
+				if (url === "about:blank") return { status: 200 };
+				return { status: 200 };
+			},
+		});
+		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
+		await client.ensureReady();
+		const h = await client.checkHealth({ probe: true });
+		expect(h.probe).toBeDefined();
+		expect(h.probe?.ok).toBe(true);
+		expect(h.probe?.error).toBeNull();
+		expect(h.probe?.roundTripMs).toBeGreaterThanOrEqual(0);
+	});
+
+	it("returns probe.ok=false without mutating status when probe fails", async () => {
+		const launcher = makeFakeLauncher({
+			pageBehavior: () => ({ gotoError: new Error("net::ERR_CONNECTION_REFUSED") }),
+		});
+		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
+		await client.ensureReady();
+		const h = await client.checkHealth({ probe: true });
+		expect(h.status).toBe("ready");
+		expect(h.probe?.ok).toBe(false);
+		expect(h.probe?.error?.type).toBe("network");
+	});
+
+	it("returns probe with playwright_disconnected when client is not ready", async () => {
+		const launcher = makeFakeLauncher({ launchFails: new Error("x") });
+		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
+		await expect(client.ensureReady()).rejects.toThrow();
+		const h = await client.checkHealth({ probe: true });
+		expect(h.status).toBe("failed");
+		expect(h.probe?.ok).toBe(false);
+		expect(h.probe?.error?.type).toBe("playwright_disconnected");
+	});
+});

@@ -82,8 +82,40 @@ export class CamoufoxClient {
 			lastError: this.state.status === "failed" && this.state.error ? this.state.error.err : null,
 		};
 		if (opts.probe) {
-			// Probe mode is implemented in Task 6. For now, snapshot-only.
-			void opts;
+			if (this.state.status !== "ready" || !this.state.context || !this.state.browser) {
+				snapshot.probe = {
+					ok: false,
+					roundTripMs: 0,
+					error: { type: "playwright_disconnected" },
+				};
+				return snapshot;
+			}
+			const probeStarted = Date.now();
+			try {
+				const page = await this.state.context.newPage();
+				try {
+					await page.goto("about:blank", { timeout: 2_000, waitUntil: "load" });
+					snapshot.probe = {
+						ok: true,
+						roundTripMs: Date.now() - probeStarted,
+						error: null,
+					};
+				} finally {
+					await page.close().catch(() => undefined);
+				}
+			} catch (err) {
+				const mapped = mapPlaywrightError(err, {
+					url: "about:blank",
+					phase: "nav",
+					elapsedMs: Date.now() - probeStarted,
+					...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+				});
+				snapshot.probe = {
+					ok: false,
+					roundTripMs: Date.now() - probeStarted,
+					error: mapped,
+				};
+			}
 		}
 		return snapshot;
 	}
