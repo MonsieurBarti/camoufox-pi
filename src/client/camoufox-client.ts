@@ -15,8 +15,10 @@ import {
 	newSpanId,
 } from "./events.js";
 import {
+	type Format,
 	type RenderMode,
 	extractSlice,
+	htmlToMarkdown,
 	resolveWaitUntil,
 	waitForSelectorOrThrow,
 } from "./fetch-pipeline.js";
@@ -157,9 +159,12 @@ export class CamoufoxClient {
 			renderMode?: RenderMode;
 			waitForSelector?: string;
 			selector?: string;
+			format?: Format;
 		},
 	): Promise<{
 		html: string;
+		markdown?: string;
+		screenshot?: import("./fetch-pipeline.js").ScreenshotResult;
 		status: number;
 		finalUrl: string;
 		bytes: number;
@@ -235,6 +240,14 @@ export class CamoufoxClient {
 					});
 				}
 			}
+			const format: Format = opts.format ?? "html";
+			if (format !== "html" && format !== "markdown") {
+				throw new CamoufoxErrorBox({
+					type: "config_invalid",
+					field: "format",
+					reason: `must be html or markdown, got ${String(format)}`,
+				});
+			}
 			try {
 				await assertSafeTarget(url, this.ssrfLookup ? { lookup: this.ssrfLookup } : {});
 			} catch (err) {
@@ -265,24 +278,49 @@ export class CamoufoxClient {
 					await waitForSelectorOrThrow(page, opts.waitForSelector, remaining);
 				}
 				const { html: rawHtml } = await extractSlice(page, opts.selector);
+				const finalUrl = response.url();
+				let body: string;
+				if (format === "markdown") {
+					try {
+						body = htmlToMarkdown(rawHtml, finalUrl);
+					} catch (err) {
+						throw new CamoufoxErrorBox({
+							type: "config_invalid",
+							field: "format",
+							reason: `markdown conversion failed: ${err instanceof Error ? err.message : String(err)}`,
+						});
+					}
+				} else {
+					body = rawHtml;
+				}
+
 				const maxBytes = opts.maxBytes ?? this.config.maxBytes;
-				const rawBytes = Buffer.byteLength(rawHtml, "utf8");
-				let html = rawHtml;
+				const rawBytes = Buffer.byteLength(body, "utf8");
+				let cappedBody = body;
 				let bytes = rawBytes;
 				let truncated = false;
 				if (rawBytes > maxBytes) {
-					const buf = Buffer.from(rawHtml, "utf8");
-					html = buf.subarray(0, maxBytes).toString("utf8");
-					bytes = Buffer.byteLength(html, "utf8");
+					const buf = Buffer.from(body, "utf8");
+					cappedBody = buf.subarray(0, maxBytes).toString("utf8");
+					bytes = Buffer.byteLength(cappedBody, "utf8");
 					truncated = true;
 				}
-				const result = {
-					html,
+
+				const result: {
+					html: string;
+					markdown?: string;
+					status: number;
+					finalUrl: string;
+					bytes: number;
+					truncated: boolean;
+				} = {
+					html: format === "html" ? cappedBody : rawHtml,
 					status: response.status(),
-					finalUrl: response.url(),
+					finalUrl,
 					bytes,
 					truncated,
 				};
+				if (format === "markdown") result.markdown = cappedBody;
 				this.events.emit("fetch_url", {
 					spanId,
 					url,
@@ -295,7 +333,7 @@ export class CamoufoxClient {
 					renderMode,
 					usedWaitForSelector: opts.waitForSelector !== undefined,
 					usedSelector: opts.selector !== undefined,
-					format: "html",
+					format,
 					screenshotBytes: null,
 				});
 				return result;
