@@ -114,5 +114,5 @@ export function createEventEmitter(): CamoufoxEventEmitter {
 }
 
 export function newSpanId(): string {
-	return randomUUID().slice(0, 8);
+	return randomUUID().replace(/-/g, "").slice(0, 16);
 }

@@ -14,7 +14,7 @@ describe("CamoufoxClient — launch events", () => {
 		await client.ensureReady();
 		expect(seen).toHaveLength(1);
 		expect(seen[0]?.browserVersion).toBe("fake-0.0.0");
-		expect(seen[0]?.spanId).toMatch(/^[0-9a-f]{8}$/);
+		expect(seen[0]?.spanId).toMatch(/^[0-9a-f]{16}$/);
 		expect(seen[0]?.durationMs).toBeGreaterThanOrEqual(0);
 	});
 
@@ -67,7 +67,7 @@ describe("CamoufoxClient — operation events", () => {
 		expect(events).toHaveLength(1);
 		expect(events[0]?.url).toBe("https://x.test/p");
 		expect(events[0]?.status).toBe(200);
-		expect(events[0]?.spanId).toMatch(/^[0-9a-f]{8}$/);
+		expect(events[0]?.spanId).toMatch(/^[0-9a-f]{16}$/);
 	});
 
 	it("emits search with spanId, engine, resultCount", async () => {

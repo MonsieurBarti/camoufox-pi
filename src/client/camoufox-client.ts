@@ -281,6 +281,15 @@ export class CamoufoxClient {
 			}
 			const adapter = duckduckgoAdapter;
 			const url = adapter.buildUrl(query);
+			try {
+				await assertSafeTarget(url, this.ssrfLookup ? { lookup: this.ssrfLookup } : {});
+			} catch (err) {
+				throw new CamoufoxErrorBox({
+					type: "config_invalid",
+					field: "url",
+					reason: err instanceof Error ? err.message : String(err),
+				});
+			}
 			const navOpts: {
 				signal: AbortSignal;
 				timeoutMs: number;

@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { BinaryDownloadProgressEvent } from "../../src/client/events.js";
+import { RealLauncher } from "../../src/client/launcher.js";
+import { CamoufoxErrorBox } from "../../src/errors.js";
 import { makeFakeLauncher } from "../helpers/fake-launcher.js";
 
 describe("fake launcher onProgress plumbing", () => {
@@ -35,5 +37,17 @@ describe("fake launcher onProgress plumbing", () => {
 		const boom = new Error("boom");
 		const launcher = makeFakeLauncher({ launchFails: boom });
 		await expect(launcher.launch({ onProgress: () => undefined })).rejects.toBe(boom);
+	});
+});
+
+describe("RealLauncher — binaryPath validation", () => {
+	it("accepts absolute path", () => {
+		expect(() => new RealLauncher({ binaryPath: "/tmp/camoufox" })).not.toThrow();
+	});
+	it("rejects relative path with config_invalid", () => {
+		expect(() => new RealLauncher({ binaryPath: "./camoufox" })).toThrow(CamoufoxErrorBox);
+	});
+	it("rejects bare name with config_invalid", () => {
+		expect(() => new RealLauncher({ binaryPath: "camoufox" })).toThrow(CamoufoxErrorBox);
 	});
 });

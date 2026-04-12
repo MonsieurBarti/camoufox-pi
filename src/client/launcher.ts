@@ -2,9 +2,11 @@
 // RealLauncher lands in a later task; tests use a fake via tests/helpers/fake-launcher.
 // Spec: §2, §4.3, §8.
 
+import { isAbsolute } from "node:path";
 import { launchOptions as camoufoxLaunchOptions } from "camoufox-js";
 import { type Browser, type BrowserContext, firefox } from "playwright-core";
 
+import { CamoufoxErrorBox } from "../errors.js";
 import type { BinaryDownloadProgressEvent } from "./events.js";
 
 export interface LaunchedBrowser {
@@ -53,6 +55,13 @@ export class RealLauncher implements Launcher {
 
 	constructor(opts: RealLauncherOptions = {}) {
 		this.headless = opts.headless ?? true;
+		if (opts.binaryPath !== undefined && !isAbsolute(opts.binaryPath)) {
+			throw new CamoufoxErrorBox({
+				type: "config_invalid",
+				field: "binaryPath",
+				reason: `must be an absolute path, got: ${opts.binaryPath}`,
+			});
+		}
 		this.binaryPath = opts.binaryPath;
 	}
 

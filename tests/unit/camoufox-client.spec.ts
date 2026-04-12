@@ -115,6 +115,6 @@ describe("CamoufoxClient — span IDs", () => {
 		await client.ensureReady();
 		await client.ensureReady();
 		expect(launches).toHaveLength(1);
-		expect(launches[0]).toMatch(/^[0-9a-f]{8}$/);
+		expect(launches[0]).toMatch(/^[0-9a-f]{16}$/);
 	});
 });

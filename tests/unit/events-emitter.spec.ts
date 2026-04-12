@@ -12,9 +12,9 @@ import {
 } from "../../src/client/events.js";
 
 describe("newSpanId", () => {
-	it("returns an 8-char string", () => {
+	it("returns a 16-char string", () => {
 		const id = newSpanId();
-		expect(id).toMatch(/^[0-9a-f]{8}$/);
+		expect(id).toMatch(/^[0-9a-f]{16}$/);
 	});
 
 	it("returns distinct values across calls", () => {
