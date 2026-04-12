@@ -382,6 +382,7 @@ Document these prominently in the README and in the tool's prompt guidelines so 
 - **Canvas spoofer regression.** CloverLabsAI fork removed the canvas spoofer in 2026-03; pin to a binary version that includes it, or accept a ~100% unique BrowserLeaks canvas fingerprint. Decision: pin to the last pre-regression stable build; track upstream.
 - **Firefox-identity.** Camoufox cannot mimic a Chromium UA convincingly (SpiderMonkey engine behavior is detectable). Anything requiring `window.chrome` / Client Hints / Chrome-specific APIs will fail. This is by design.
 - **Memory.** 200–1300 MB RSS per session is the price of stealth. Don't run multiple parallel `CamoufoxClient` instances on small hosts — reuse the singleton.
+- **Node support is third-party.** Upstream Camoufox officially supports only the Python wrapper. Node integration uses `camoufox-js` (Apify, MPL-2.0). Launcher isolation (`src/client/launcher.ts` is the only importer) keeps the dependency swappable; if `camoufox-js` stalls, replacement requires only a new `Launcher` implementation.
 
 ## 18. Alternatives Considered
 
