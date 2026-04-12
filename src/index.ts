@@ -1,8 +1,10 @@
 import type { TObject } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 
+import { RealLauncher } from "./client/launcher.js";
 import type { CommandContext, CommandDefinition } from "./commands/index.js";
 import { createAllCommands } from "./commands/index.js";
+import { CamoufoxErrorBox } from "./errors.js";
 import { createAllHooks } from "./hooks/index.js";
 import { CamoufoxService } from "./services/camoufox-service.js";
 import type { ToolDefinition } from "./tools/index.js";
@@ -46,7 +48,13 @@ interface PiRegisteredTool {
 	promptSnippet: string;
 	promptGuidelines: string[];
 	parameters: unknown;
-	execute(toolCallId: string, input: unknown): Promise<PiToolExecuteResult>;
+	execute(
+		toolCallId: string,
+		input: unknown,
+		signal?: AbortSignal,
+		onUpdate?: unknown,
+		ctx?: unknown,
+	): Promise<PiToolExecuteResult>;
 }
 
 interface PiRegisteredCommand {
@@ -93,26 +101,22 @@ function wrapTool<S extends TObject>(def: ToolDefinition<S>): PiRegisteredTool {
 		promptSnippet: def.promptSnippet,
 		promptGuidelines: guidelines,
 		parameters: def.parameters,
-		async execute(toolCallId, input) {
+		async execute(toolCallId, input, signal) {
 			if (!Value.Check(def.parameters, input)) {
-				return {
-					content: [
-						{
-							type: "text",
-							text: `Invalid input for ${def.name}`,
-						},
-					],
-					details: { error: "validation-failed" },
-				};
+				const first = [...Value.Errors(def.parameters, input)][0];
+				throw new CamoufoxErrorBox({
+					type: "config_invalid",
+					field: first?.path ?? "(root)",
+					reason: first?.message ?? "validation failed",
+				});
 			}
-			const result = await def.execute(toolCallId, input);
-			return {
-				content: result.content,
-				details: result.details,
-			};
+			return def.execute(toolCallId, input, signal);
 		},
 	};
 }
+
+// Exposed for unit tests only. Not part of the public API.
+export const __test_wrapTool__ = wrapTool;
 
 function wrapCommand(def: CommandDefinition): PiRegisteredCommand {
 	return {
@@ -136,27 +140,27 @@ function wrapCommand(def: CommandDefinition): PiRegisteredCommand {
 // ---------------------------------------------------------------------------
 
 export default function camoufoxExtension(pi: PiExtensionApi): void {
-	const service = new CamoufoxService();
+	const service = new CamoufoxService({
+		launcherFactory: () => new RealLauncher(),
+	});
 
-	// Register all tools + commands.
-	for (const def of createAllTools(service)) {
-		pi.registerTool(wrapTool(def));
-	}
-	for (const def of createAllCommands(service)) {
-		pi.registerCommand(def.name, wrapCommand(def));
-	}
-
-	// Register hooks.
-	for (const hook of createAllHooks(service)) {
-		pi.on(hook.event, hook.handler);
-	}
-
-	// Lifecycle: initialize on session_start, cleanup on session_shutdown.
 	pi.on("session_start", async (_event, ctx) => {
 		const cwd = (ctx as { cwd?: string })?.cwd ?? pi.cwd ?? process.cwd();
 		await service.initialize(cwd);
 
-		// Check for extension updates
+		// Register tools + commands AFTER initialize so createAllTools can
+		// access service.getClient(). Per @mariozechner/pi-coding-agent docs,
+		// pi.registerTool() works after startup as well as during load.
+		for (const def of createAllTools(service)) {
+			pi.registerTool(wrapTool(def));
+		}
+		for (const def of createAllCommands(service)) {
+			pi.registerCommand(def.name, wrapCommand(def));
+		}
+		for (const hook of createAllHooks(service)) {
+			pi.on(hook.event, hook.handler);
+		}
+
 		const updateInfo = await checkForUpdates(pi);
 		if (updateInfo?.updateAvailable) {
 			(ctx as { ui?: { notify?: (message: string, level?: string) => void } }).ui?.notify?.(
