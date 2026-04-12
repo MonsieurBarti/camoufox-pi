@@ -14,7 +14,7 @@ import {
 	createEventEmitter,
 	newSpanId,
 } from "./events.js";
-import { type RenderMode, resolveWaitUntil } from "./fetch-pipeline.js";
+import { type RenderMode, resolveWaitUntil, waitForSelectorOrThrow } from "./fetch-pipeline.js";
 import type { Launcher } from "./launcher.js";
 import { combineSignals } from "./signal.js";
 
@@ -150,6 +150,7 @@ export class CamoufoxClient {
 			maxBytes?: number;
 			isolate?: boolean;
 			renderMode?: RenderMode;
+			waitForSelector?: string;
 		},
 	): Promise<{
 		html: string;
@@ -195,6 +196,23 @@ export class CamoufoxClient {
 				});
 			}
 			const renderMode: RenderMode = opts.renderMode ?? "render";
+			if (opts.waitForSelector !== undefined && renderMode !== "render-and-wait") {
+				throw new CamoufoxErrorBox({
+					type: "config_invalid",
+					field: "waitForSelector",
+					reason: "only valid with renderMode: render-and-wait",
+				});
+			}
+			if (
+				opts.waitForSelector !== undefined &&
+				(typeof opts.waitForSelector !== "string" || opts.waitForSelector.length === 0)
+			) {
+				throw new CamoufoxErrorBox({
+					type: "config_invalid",
+					field: "waitForSelector",
+					reason: "must be a non-empty string",
+				});
+			}
 			try {
 				await assertSafeTarget(url, this.ssrfLookup ? { lookup: this.ssrfLookup } : {});
 			} catch (err) {
@@ -217,6 +235,13 @@ export class CamoufoxClient {
 			if (opts.isolate !== undefined) navOpts.isolate = opts.isolate;
 			const { page, response, cleanup } = await this.navigate(url, navOpts);
 			try {
+				if (opts.waitForSelector !== undefined) {
+					const remaining = Math.max(
+						0,
+						(opts.timeoutMs ?? this.config.timeoutMs) - (Date.now() - started),
+					);
+					await waitForSelectorOrThrow(page, opts.waitForSelector, remaining);
+				}
 				const rawHtml = await page.content();
 				const maxBytes = opts.maxBytes ?? this.config.maxBytes;
 				const rawBytes = Buffer.byteLength(rawHtml, "utf8");
@@ -246,7 +271,7 @@ export class CamoufoxClient {
 					isolate: opts.isolate ?? false,
 					durationMs: Date.now() - started,
 					renderMode,
-					usedWaitForSelector: false,
+					usedWaitForSelector: opts.waitForSelector !== undefined,
 					usedSelector: false,
 					format: "html",
 					screenshotBytes: null,
