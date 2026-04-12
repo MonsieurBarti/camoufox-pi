@@ -6,6 +6,14 @@ import type { RawResult } from "../search/types.js";
 import { type LookupFn, assertSafeTarget } from "../security/ssrf.js";
 import type { CamoufoxConfig } from "../types.js";
 import { DEFAULT_CONFIG } from "../types.js";
+import {
+	type BinaryDownloadProgressEvent,
+	type BrowserLaunchEvent,
+	type CamoufoxEventEmitter,
+	type ErrorEvent,
+	createEventEmitter,
+	newSpanId,
+} from "./events.js";
 import type { Launcher } from "./launcher.js";
 import { combineSignals } from "./signal.js";
 
@@ -16,6 +24,8 @@ interface ReadyState {
 	version?: string;
 	error?: CamoufoxErrorBox;
 	launchPromise?: Promise<void>;
+	launchedAt?: number;
+	launchSpanId?: string;
 }
 
 export interface CamoufoxClientOptions {
@@ -26,6 +36,7 @@ export interface CamoufoxClientOptions {
 }
 
 export class CamoufoxClient {
+	readonly events: CamoufoxEventEmitter = createEventEmitter();
 	private readonly launcher: Launcher;
 	private readonly config: CamoufoxConfig;
 	private readonly ssrfLookup: LookupFn | undefined;
@@ -51,8 +62,9 @@ export class CamoufoxClient {
 			await this.awaitWithSignal(this.state.launchPromise, signal);
 			return;
 		}
-		const launchPromise = this.doLaunch();
-		this.state = { status: "launching", launchPromise };
+		const spanId = newSpanId();
+		const launchPromise = this.doLaunch(spanId);
+		this.state = { status: "launching", launchPromise, launchSpanId: spanId };
 		await this.awaitWithSignal(launchPromise, signal);
 	}
 
@@ -299,24 +311,44 @@ export class CamoufoxClient {
 		return this.state.browser;
 	}
 
-	private async doLaunch(): Promise<void> {
+	private async doLaunch(spanId: string): Promise<void> {
+		const started = Date.now();
 		try {
-			const { browser, context, version } = await this.launcher.launch();
+			const { browser, context, version } = await this.launcher.launch({
+				onProgress: (e: BinaryDownloadProgressEvent) =>
+					this.events.emit("binary_download_progress", e),
+			});
 			// If close() was called while we were launching, tear down the fresh
 			// browser instead of resurrecting into ready. Leaves state as "closed".
 			if (this.state.status !== "launching") {
 				await browser.close().catch(() => undefined);
 				return;
 			}
-			this.state = { status: "ready", browser, context, version };
+			this.state = {
+				status: "ready",
+				browser,
+				context,
+				version,
+				launchedAt: Date.now(),
+				launchSpanId: spanId,
+			};
+			const payload: BrowserLaunchEvent = {
+				spanId,
+				browserVersion: version,
+				durationMs: Date.now() - started,
+			};
+			this.events.emit("browser_launch", payload);
 		} catch (err) {
 			const stderr = err instanceof Error ? err.message : String(err);
-			const boxed = new CamoufoxErrorBox({ type: "browser_launch_failed", stderr });
-			// If close() was called during the failed launch, keep the closed state
-			// (don't overwrite it with failed — closed is terminal).
+			const camErr = { type: "browser_launch_failed" as const, stderr };
+			const boxed = new CamoufoxErrorBox(camErr);
+			// If close() was called during the failed launch, keep the closed
+			// state (don't overwrite it with failed — closed is terminal).
 			if (this.state.status === "launching") {
 				this.state = { status: "failed", error: boxed };
 			}
+			const errPayload: ErrorEvent = { spanId, op: "ensureReady", error: camErr };
+			this.events.emit("error", errPayload);
 			throw boxed;
 		}
 	}
