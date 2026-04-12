@@ -2,6 +2,7 @@ import type { CamoufoxClient } from "../client/camoufox-client.js";
 import { createClient } from "../client/create-client.js";
 import type { BinaryDownloadProgressEvent, CamoufoxEvents } from "../client/events.js";
 import type { Launcher } from "../client/launcher.js";
+import type { LookupFn } from "../security/ssrf.js";
 import type { CamoufoxConfig } from "../types.js";
 import { DEFAULT_CONFIG } from "../types.js";
 
@@ -29,6 +30,8 @@ export interface PiAttachable {
 export interface CamoufoxServiceOptions {
 	readonly config?: Partial<CamoufoxConfig>;
 	readonly launcher?: Launcher;
+	/** Optional DNS lookup override; forwarded to the client for test injection. */
+	readonly ssrfLookup?: LookupFn;
 	/**
 	 * @deprecated Transitional shim — src/index.ts still passes launcherFactory.
 	 * Removed in Task 10 when src/index.ts is rewritten. Do NOT use in new code.
@@ -58,9 +61,14 @@ export class CamoufoxService {
 		if (resolvedLauncher === undefined && opts.launcherFactory) {
 			resolvedLauncher = opts.launcherFactory();
 		}
-		const createOpts: { config?: Partial<CamoufoxConfig>; launcher?: Launcher } = {};
+		const createOpts: {
+			config?: Partial<CamoufoxConfig>;
+			launcher?: Launcher;
+			ssrfLookup?: LookupFn;
+		} = {};
 		if (opts.config !== undefined) createOpts.config = opts.config;
 		if (resolvedLauncher !== undefined) createOpts.launcher = resolvedLauncher;
+		if (opts.ssrfLookup !== undefined) createOpts.ssrfLookup = opts.ssrfLookup;
 		this.client = createClient(createOpts);
 	}
 
