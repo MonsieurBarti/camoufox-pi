@@ -7,25 +7,21 @@ import camoufoxExtension, {
 	CamoufoxService,
 	createAllCommands,
 	createAllHooks,
-	createAllTools,
 } from "../../src/index.js";
 import type { ToolDefinition } from "../../src/tools/types.js";
+import { makeFakeLauncher } from "../helpers/fake-launcher.js";
 
 describe("library exports", () => {
 	it("exposes the default extension entry", () => {
 		expect(typeof camoufoxExtension).toBe("function");
 	});
 
-	it("exposes the service and factories", () => {
-		const service = new CamoufoxService();
+	it("exposes the service and factories with an eagerly-constructed client", () => {
+		const service = new CamoufoxService({ launcher: makeFakeLauncher() });
 		expect(typeof service.getConfig).toBe("function");
 		expect(createAllCommands(service)).toEqual([]);
 		expect(createAllHooks(service)).toEqual([]);
-	});
-
-	it("createAllTools throws if the service is not initialized", () => {
-		const service = new CamoufoxService();
-		expect(() => createAllTools(service)).toThrow(/initialize/);
+		expect(service.getClient()).toBeDefined();
 	});
 });
 

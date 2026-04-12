@@ -1,44 +1,123 @@
-import { CamoufoxClient } from "../client/camoufox-client.js";
+import type { CamoufoxClient } from "../client/camoufox-client.js";
+import { createClient } from "../client/create-client.js";
+import type { BinaryDownloadProgressEvent, CamoufoxEvents } from "../client/events.js";
 import type { Launcher } from "../client/launcher.js";
 import type { CamoufoxConfig } from "../types.js";
 import { DEFAULT_CONFIG } from "../types.js";
 
-// Owns the singleton CamoufoxClient for one PI session.
-// Lifecycle: initialize (kicks off ensureReady without awaiting) / shutdown
-// (closes the client). Spec: §2, §3.1.
-export class CamoufoxService {
-	private readonly config: CamoufoxConfig;
-	private readonly launcherFactory: () => Launcher;
-	private basePath: string | null = null;
-	private client: CamoufoxClient | null = null;
+/**
+ * Minimal shapes for the PI extension API surface this service depends on.
+ * Kept structural so the service can be unit-tested without the peer
+ * @mariozechner/pi-coding-agent dep installed.
+ */
+interface MinimalPiEvents {
+	emit(event: string, payload: unknown): boolean;
+}
 
-	constructor(opts?: { config?: CamoufoxConfig; launcherFactory?: () => Launcher }) {
-		this.config = opts?.config ?? DEFAULT_CONFIG;
-		this.launcherFactory =
-			opts?.launcherFactory ??
-			(() => {
-				throw new Error(
-					"CamoufoxService requires a launcherFactory. In production, src/index.ts wires a RealLauncher. In tests, inject a fake.",
-				);
+interface MinimalPiUi {
+	setStatus?: (key: string, message: string | null) => void;
+	notify?: (message: string, level?: string) => void;
+}
+
+export interface PiAttachable {
+	on(event: string, handler: (e: unknown, ctx: unknown) => unknown | Promise<unknown>): void;
+	events: MinimalPiEvents;
+	ui?: MinimalPiUi;
+	cwd?: string;
+}
+
+export interface CamoufoxServiceOptions {
+	readonly config?: Partial<CamoufoxConfig>;
+	readonly launcher?: Launcher;
+	/**
+	 * @deprecated Transitional shim — src/index.ts still passes launcherFactory.
+	 * Removed in Task 10 when src/index.ts is rewritten. Do NOT use in new code.
+	 */
+	readonly launcherFactory?: () => Launcher;
+}
+
+/**
+ * Thin PI-binding adapter. Constructs one CamoufoxClient up front (via
+ * createClient, which kicks off ensureReady in the background) and
+ * bridges client.events → pi.events (with "camoufox:" prefix). Drives
+ * pi.ui.setStatus for binary-download progress. Wires session_start /
+ * session_shutdown hooks to client lifecycle.
+ *
+ * Non-PI consumers should prefer `createClient()` directly.
+ */
+export class CamoufoxService {
+	readonly client: CamoufoxClient;
+	private readonly config: CamoufoxConfig;
+	private bridges: Array<() => void> = [];
+	private basePath: string | null = null;
+
+	constructor(opts: CamoufoxServiceOptions = {}) {
+		this.config = { ...DEFAULT_CONFIG, ...opts.config };
+		// TODO(Task 10): remove launcherFactory shim once src/index.ts is rewritten.
+		let resolvedLauncher = opts.launcher;
+		if (resolvedLauncher === undefined && opts.launcherFactory) {
+			resolvedLauncher = opts.launcherFactory();
+		}
+		const createOpts: { config?: Partial<CamoufoxConfig>; launcher?: Launcher } = {};
+		if (opts.config !== undefined) createOpts.config = opts.config;
+		if (resolvedLauncher !== undefined) createOpts.launcher = resolvedLauncher;
+		this.client = createClient(createOpts);
+	}
+
+	attach(pi: PiAttachable): void {
+		const EVENT_NAMES: Array<keyof CamoufoxEvents> = [
+			"search",
+			"fetch_url",
+			"browser_launch",
+			"binary_download_progress",
+			"error",
+		];
+		for (const name of EVENT_NAMES) {
+			const forward = (payload: unknown): void => {
+				pi.events.emit(`camoufox:${name}`, payload);
+			};
+			// biome-ignore lint/suspicious/noExplicitAny: typed dispatch across heterogeneous event payloads
+			this.client.events.on(name, forward as any);
+			this.bridges.push(() => {
+				// biome-ignore lint/suspicious/noExplicitAny: paired with the `on` cast above
+				this.client.events.off(name, forward as any);
 			});
+		}
+
+		const onProgress = (e: BinaryDownloadProgressEvent): void => {
+			const pct = e.bytesTotal ? Math.floor((e.bytesDownloaded / e.bytesTotal) * 100) : null;
+			const msg =
+				pct !== null
+					? `Downloading Camoufox… ${pct}%`
+					: `Downloading Camoufox… ${Math.floor(e.bytesDownloaded / 1_048_576)} MiB`;
+			pi.ui?.setStatus?.("camoufox:binary", msg);
+		};
+		this.client.events.on("binary_download_progress", onProgress);
+		this.bridges.push(() => this.client.events.off("binary_download_progress", onProgress));
+
+		const onLaunch = (): void => {
+			pi.ui?.setStatus?.("camoufox:binary", null);
+		};
+		this.client.events.on("browser_launch", onLaunch);
+		this.bridges.push(() => this.client.events.off("browser_launch", onLaunch));
+
+		pi.on("session_start", async (_e, ctx) => {
+			const cwd = (ctx as { cwd?: string })?.cwd ?? pi.cwd ?? process.cwd();
+			await this.initialize(cwd);
+		});
+		pi.on("session_shutdown", () => this.shutdown());
 	}
 
 	async initialize(cwd: string, _signal?: AbortSignal): Promise<void> {
 		this.basePath = cwd;
-		const launcher = this.launcherFactory();
-		this.client = new CamoufoxClient({ launcher, config: this.config });
-		// Fire-and-forget: kick off launch but do not await. First tool call
-		// awaits the same in-flight promise via client.ensureReady().
-		this.client.ensureReady().catch(() => {
-			// Swallow — failure is sticky and surfaces on the first tool call.
-		});
+		await this.client.ensureReady();
 	}
 
 	async shutdown(): Promise<void> {
-		const client = this.client;
-		this.client = null;
+		for (const off of this.bridges) off();
+		this.bridges = [];
 		this.basePath = null;
-		if (client) await client.close();
+		await this.client.close();
 	}
 
 	getConfig(): CamoufoxConfig {
@@ -50,9 +129,6 @@ export class CamoufoxService {
 	}
 
 	getClient(): CamoufoxClient {
-		if (!this.client) {
-			throw new Error("CamoufoxService.getClient() called before initialize()");
-		}
 		return this.client;
 	}
 }
