@@ -1,9 +1,8 @@
 import type { Static, TObject } from "@sinclair/typebox";
 
 // Structural ToolDefinition compatible with @mariozechner/pi-coding-agent's
-// ExtensionAPI.registerTool signature. Defined locally so tool files and their
-// tests do not need to import from the peer dep. Each tool narrows
-// `parameters` to its own TypeBox schema via a generic.
+// ExtensionAPI.registerTool signature. Spec: §3.3. `execute` receives the
+// PI turn AbortSignal; use AbortSignal.any to combine with internal timeouts.
 export interface ToolDefinition<S extends TObject = TObject> {
 	name: string;
 	readOnly?: boolean;
@@ -12,7 +11,11 @@ export interface ToolDefinition<S extends TObject = TObject> {
 	promptSnippet: string;
 	promptGuidelines: string[];
 	parameters: S;
-	execute(toolCallId: string, input: Static<S>): Promise<ToolExecuteResult>;
+	execute(
+		toolCallId: string,
+		input: Static<S>,
+		signal: AbortSignal | undefined,
+	): Promise<ToolExecuteResult>;
 }
 
 export interface ToolExecuteResult {
@@ -20,7 +23,6 @@ export interface ToolExecuteResult {
 	details: Record<string, ToolDetailValue>;
 }
 
-// Recursive JSON-safe value type for the `details` field on a tool result.
 export type ToolDetailValue =
 	| string
 	| number

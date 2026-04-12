@@ -3,6 +3,7 @@ import { Value } from "@sinclair/typebox/value";
 
 import type { CommandContext, CommandDefinition } from "./commands/index.js";
 import { createAllCommands } from "./commands/index.js";
+import { CamoufoxErrorBox } from "./errors.js";
 import { createAllHooks } from "./hooks/index.js";
 import { CamoufoxService } from "./services/camoufox-service.js";
 import type { ToolDefinition } from "./tools/index.js";
@@ -46,7 +47,13 @@ interface PiRegisteredTool {
 	promptSnippet: string;
 	promptGuidelines: string[];
 	parameters: unknown;
-	execute(toolCallId: string, input: unknown): Promise<PiToolExecuteResult>;
+	execute(
+		toolCallId: string,
+		input: unknown,
+		signal?: AbortSignal,
+		onUpdate?: unknown,
+		ctx?: unknown,
+	): Promise<PiToolExecuteResult>;
 }
 
 interface PiRegisteredCommand {
@@ -93,26 +100,22 @@ function wrapTool<S extends TObject>(def: ToolDefinition<S>): PiRegisteredTool {
 		promptSnippet: def.promptSnippet,
 		promptGuidelines: guidelines,
 		parameters: def.parameters,
-		async execute(toolCallId, input) {
+		async execute(toolCallId, input, signal) {
 			if (!Value.Check(def.parameters, input)) {
-				return {
-					content: [
-						{
-							type: "text",
-							text: `Invalid input for ${def.name}`,
-						},
-					],
-					details: { error: "validation-failed" },
-				};
+				const first = [...Value.Errors(def.parameters, input)][0];
+				throw new CamoufoxErrorBox({
+					type: "config_invalid",
+					field: first?.path ?? "(root)",
+					reason: first?.message ?? "validation failed",
+				});
 			}
-			const result = await def.execute(toolCallId, input);
-			return {
-				content: result.content,
-				details: result.details,
-			};
+			return def.execute(toolCallId, input, signal);
 		},
 	};
 }
+
+// Exposed for unit tests only. Not part of the public API.
+export const __test_wrapTool__ = wrapTool;
 
 function wrapCommand(def: CommandDefinition): PiRegisteredCommand {
 	return {
