@@ -1,3 +1,4 @@
+import "./formats.js";
 import type { CamoufoxService } from "../services/camoufox-service.js";
 import type { ToolDefinition } from "./types.js";
 

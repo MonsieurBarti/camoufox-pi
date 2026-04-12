@@ -1,16 +1,6 @@
-import { FormatRegistry, Type } from "@sinclair/typebox";
+import "../../src/tools/formats.js";
+import { Type } from "@sinclair/typebox";
 import { describe, expect, it } from "vitest";
-
-if (!FormatRegistry.Has("uri")) {
-	FormatRegistry.Set("uri", (value) => {
-		try {
-			new URL(value);
-			return true;
-		} catch {
-			return false;
-		}
-	});
-}
 
 import { CamoufoxErrorBox } from "../../src/errors.js";
 import camoufoxExtension, {
