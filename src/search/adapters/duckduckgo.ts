@@ -36,6 +36,14 @@ export const duckduckgoAdapter: SearchEngineAdapter = {
 						}
 					}
 					if (url.startsWith("//")) url = `https:${url}`;
+					// Defense-in-depth: reject non-http(s) URLs that might surface
+					// from adversarial SERPs (javascript:, data:, etc.).
+					try {
+						const u = new URL(url);
+						if (u.protocol !== "http:" && u.protocol !== "https:") continue;
+					} catch {
+						continue;
+					}
 					const snippetEl = el.querySelector("a.result__snippet, .result__snippet");
 					const snippet = ((snippetEl?.textContent ?? "") as string).trim();
 					if (!title || !url) continue;

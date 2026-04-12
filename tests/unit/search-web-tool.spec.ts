@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { CamoufoxClient } from "../../src/client/camoufox-client.js";
 import { createSearchWebTool } from "../../src/tools/search-web.js";
 import { makeFakeLauncher } from "../helpers/fake-launcher.js";
+import { safeLookup } from "../helpers/safe-lookup.js";
 
 describe("tff-search_web tool", () => {
 	it("returns structured results", async () => {
@@ -14,7 +15,7 @@ describe("tff-search_web tool", () => {
 				},
 			}),
 		});
-		const client = new CamoufoxClient({ launcher });
+		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
 		const tool = createSearchWebTool(client);
 		const res = await tool.execute("id", { query: "hello" }, new AbortController().signal);
 		expect(res.details).toMatchObject({
@@ -39,7 +40,7 @@ describe("tff-search_web tool", () => {
 				},
 			}),
 		});
-		const client = new CamoufoxClient({ launcher });
+		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
 		const tool = createSearchWebTool(client);
 		// TypeBox rejects max_results > 50 at wrapTool's Value.Check, so we
 		// test the internal tool clamp directly. Direct execute bypasses
@@ -58,7 +59,7 @@ describe("tff-search_web tool", () => {
 		const launcher = makeFakeLauncher({
 			pageBehavior: () => ({ status: 200, evalResults: { "div.result, div.web-result": [] } }),
 		});
-		const client = new CamoufoxClient({ launcher });
+		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
 		const tool = createSearchWebTool(client);
 		const res = await tool.execute("id", { query: "no-hits" }, new AbortController().signal);
 		expect(res.details.results).toEqual([]);

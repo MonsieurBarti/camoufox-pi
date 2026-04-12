@@ -3,6 +3,7 @@ import type { Browser, BrowserContext, Page } from "playwright-core";
 import { CamoufoxErrorBox, mapPlaywrightError } from "../errors.js";
 import { duckduckgoAdapter } from "../search/adapters/duckduckgo.js";
 import type { RawResult } from "../search/types.js";
+import { type LookupFn, assertSafeTarget } from "../security/ssrf.js";
 import type { CamoufoxConfig } from "../types.js";
 import { DEFAULT_CONFIG } from "../types.js";
 import type { Launcher } from "./launcher.js";
@@ -20,16 +21,20 @@ interface ReadyState {
 export interface CamoufoxClientOptions {
 	readonly launcher: Launcher;
 	readonly config?: CamoufoxConfig;
+	/** Optional DNS lookup override; used to inject stubs in tests. */
+	readonly ssrfLookup?: LookupFn;
 }
 
 export class CamoufoxClient {
 	private readonly launcher: Launcher;
 	private readonly config: CamoufoxConfig;
+	private readonly ssrfLookup: LookupFn | undefined;
 	private state: ReadyState = { status: "idle" };
 
 	constructor(opts: CamoufoxClientOptions) {
 		this.launcher = opts.launcher;
 		this.config = opts.config ?? DEFAULT_CONFIG;
+		this.ssrfLookup = opts.ssrfLookup;
 	}
 
 	isAlive(): boolean {
@@ -53,8 +58,19 @@ export class CamoufoxClient {
 
 	async fetchUrl(
 		url: string,
-		opts: { signal: AbortSignal; timeoutMs?: number },
-	): Promise<{ html: string; status: number; finalUrl: string }> {
+		opts: {
+			signal: AbortSignal;
+			timeoutMs?: number;
+			maxBytes?: number;
+			isolate?: boolean;
+		},
+	): Promise<{
+		html: string;
+		status: number;
+		finalUrl: string;
+		bytes: number;
+		truncated: boolean;
+	}> {
 		await this.ensureReady(opts.signal);
 		if (
 			opts.timeoutMs !== undefined &&
@@ -66,14 +82,51 @@ export class CamoufoxClient {
 				reason: `must be integer in [1000, 120000], got ${opts.timeoutMs}`,
 			});
 		}
-		const { page, response, cleanup } = await this.navigate(url, {
+		if (
+			opts.maxBytes !== undefined &&
+			(!Number.isInteger(opts.maxBytes) || opts.maxBytes < 1_024 || opts.maxBytes > 52_428_800)
+		) {
+			throw new CamoufoxErrorBox({
+				type: "config_invalid",
+				field: "maxBytes",
+				reason: `must be integer in [1024, 52428800], got ${opts.maxBytes}`,
+			});
+		}
+		try {
+			await assertSafeTarget(url, this.ssrfLookup ? { lookup: this.ssrfLookup } : {});
+		} catch (err) {
+			throw new CamoufoxErrorBox({
+				type: "config_invalid",
+				field: "url",
+				reason: err instanceof Error ? err.message : String(err),
+			});
+		}
+		const navOpts: {
+			signal: AbortSignal;
+			timeoutMs: number;
+			waitUntil: "load" | "domcontentloaded" | "networkidle";
+			isolate?: boolean;
+		} = {
 			signal: opts.signal,
 			timeoutMs: opts.timeoutMs ?? this.config.timeoutMs,
 			waitUntil: "load",
-		});
+		};
+		if (opts.isolate !== undefined) navOpts.isolate = opts.isolate;
+		const { page, response, cleanup } = await this.navigate(url, navOpts);
 		try {
-			const html = await page.content();
-			return { html, status: response.status(), finalUrl: response.url() };
+			const rawHtml = await page.content();
+			const maxBytes = opts.maxBytes ?? this.config.maxBytes;
+			const rawBytes = Buffer.byteLength(rawHtml, "utf8");
+			let html = rawHtml;
+			let bytes = rawBytes;
+			let truncated = false;
+			if (rawBytes > maxBytes) {
+				const buf = Buffer.from(rawHtml, "utf8");
+				html = buf.subarray(0, maxBytes).toString("utf8");
+				bytes = Buffer.byteLength(html, "utf8");
+				truncated = true;
+			}
+			return { html, status: response.status(), finalUrl: response.url(), bytes, truncated };
 		} catch (err) {
 			if (opts.signal.aborted) {
 				throw new CamoufoxErrorBox({ type: "aborted" });
@@ -88,7 +141,12 @@ export class CamoufoxClient {
 
 	async search(
 		query: string,
-		opts: { signal: AbortSignal; maxResults?: number; timeoutMs?: number },
+		opts: {
+			signal: AbortSignal;
+			maxResults?: number;
+			timeoutMs?: number;
+			isolate?: boolean;
+		},
 	): Promise<{ results: RawResult[]; engine: "duckduckgo"; query: string }> {
 		await this.ensureReady(opts.signal);
 		const maxResults = opts.maxResults ?? 10;
@@ -111,11 +169,18 @@ export class CamoufoxClient {
 		}
 		const adapter = duckduckgoAdapter;
 		const url = adapter.buildUrl(query);
-		const { page, cleanup } = await this.navigate(url, {
+		const navOpts: {
+			signal: AbortSignal;
+			timeoutMs: number;
+			waitUntil: "load" | "domcontentloaded" | "networkidle";
+			isolate?: boolean;
+		} = {
 			signal: opts.signal,
 			timeoutMs: opts.timeoutMs ?? this.config.timeoutMs,
 			waitUntil: adapter.waitStrategy.readyState,
-		});
+		};
+		if (opts.isolate !== undefined) navOpts.isolate = opts.isolate;
+		const { page, cleanup } = await this.navigate(url, navOpts);
 		try {
 			const results = await adapter.parseResults(page, maxResults);
 			return { results, engine: "duckduckgo", query };
@@ -137,13 +202,22 @@ export class CamoufoxClient {
 			signal: AbortSignal;
 			timeoutMs: number;
 			waitUntil: "load" | "domcontentloaded" | "networkidle";
+			isolate?: boolean;
 		},
 	): Promise<{
 		page: Page;
 		response: { status(): number; url(): string };
 		cleanup: () => void;
 	}> {
-		const context = this.getContext();
+		let context: BrowserContext;
+		let ownContext = false;
+		if (opts.isolate) {
+			const browser = this.getBrowser();
+			context = await browser.newContext();
+			ownContext = true;
+		} else {
+			context = this.getContext();
+		}
 		const combined = combineSignals(opts.signal, opts.timeoutMs);
 		const page = await context.newPage();
 		const abortHandler = () => {
@@ -153,6 +227,9 @@ export class CamoufoxClient {
 		const cleanup = () => {
 			combined.signal.removeEventListener("abort", abortHandler);
 			combined.cleanup();
+			if (ownContext) {
+				context.close().catch(() => undefined);
+			}
 		};
 		const started = Date.now();
 		try {
@@ -180,7 +257,7 @@ export class CamoufoxClient {
 				url,
 				phase: "nav",
 				elapsedMs: Date.now() - started,
-				signal: combined.signal,
+				signal: opts.signal,
 			});
 			throw new CamoufoxErrorBox(mapped);
 		}
@@ -210,6 +287,16 @@ export class CamoufoxClient {
 			throw new CamoufoxErrorBox({ type: "playwright_disconnected" });
 		}
 		return this.state.context;
+	}
+
+	protected getBrowser(): Browser {
+		if (this.state.status !== "ready" || !this.state.browser) {
+			throw new CamoufoxErrorBox({ type: "playwright_disconnected" });
+		}
+		if (!this.state.browser.isConnected()) {
+			throw new CamoufoxErrorBox({ type: "playwright_disconnected" });
+		}
+		return this.state.browser;
 	}
 
 	private async doLaunch(): Promise<void> {

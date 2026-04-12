@@ -4,9 +4,11 @@
 export interface CamoufoxConfig {
 	readonly timeoutMs: number;
 	readonly defaultEngine: "duckduckgo";
+	readonly maxBytes: number;
 }
 
 export const DEFAULT_CONFIG: CamoufoxConfig = {
 	timeoutMs: 30_000,
 	defaultEngine: "duckduckgo",
+	maxBytes: 2_097_152,
 };

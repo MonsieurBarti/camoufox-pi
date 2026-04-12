@@ -12,7 +12,7 @@ export interface LaunchedBrowser {
 }
 
 export interface Launcher {
-	launch(signal?: AbortSignal): Promise<LaunchedBrowser>;
+	launch(): Promise<LaunchedBrowser>;
 }
 
 export interface RealLauncherOptions {
@@ -37,11 +37,7 @@ export class RealLauncher implements Launcher {
 		this.binaryPath = opts.binaryPath;
 	}
 
-	async launch(_signal?: AbortSignal): Promise<LaunchedBrowser> {
-		// NOTE: signal is accepted for interface compliance but NOT honored here.
-		// Aborting during first-run binary download or firefox.launch is deferred
-		// to the integration-tests slice. Callers using AbortSignal to cancel
-		// launch should reconstruct the client instead.
+	async launch(): Promise<LaunchedBrowser> {
 		const launchOpts = (await camoufoxLaunchOptions({
 			headless: this.headless,
 			...(this.binaryPath !== undefined ? { executablePath: this.binaryPath } : {}),

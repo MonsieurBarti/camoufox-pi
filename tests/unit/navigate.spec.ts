@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { CamoufoxClient } from "../../src/client/camoufox-client.js";
 import { CamoufoxErrorBox } from "../../src/errors.js";
 import { makeFakeLauncher } from "../helpers/fake-launcher.js";
+import { safeLookup } from "../helpers/safe-lookup.js";
 
 describe("CamoufoxClient.fetchUrl", () => {
 	it("returns { html, status, finalUrl } on 200", async () => {
@@ -13,7 +14,7 @@ describe("CamoufoxClient.fetchUrl", () => {
 				finalUrl: "https://example.test/final",
 			}),
 		});
-		const client = new CamoufoxClient({ launcher });
+		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
 		const result = await client.fetchUrl("https://example.test/", {
 			signal: new AbortController().signal,
 		});
@@ -29,7 +30,7 @@ describe("CamoufoxClient.fetchUrl", () => {
 		const launcher = makeFakeLauncher({
 			pageBehavior: () => ({ status: 404, finalUrl: "https://x.test/" }),
 		});
-		const client = new CamoufoxClient({ launcher });
+		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
 		const p = client.fetchUrl("https://x.test/", { signal: new AbortController().signal });
 		await expect(p).rejects.toMatchObject({
 			err: { type: "http", status: 404, url: "https://x.test/" },
@@ -42,7 +43,7 @@ describe("CamoufoxClient.fetchUrl", () => {
 		const launcher = makeFakeLauncher({
 			pageBehavior: () => ({ gotoError: new Error("net::ERR_NAME_NOT_RESOLVED") }),
 		});
-		const client = new CamoufoxClient({ launcher });
+		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
 		const p = client.fetchUrl("https://nope.test/", { signal: new AbortController().signal });
 		await expect(p).rejects.toMatchObject({
 			err: { type: "network", url: "https://nope.test/" },
@@ -53,7 +54,7 @@ describe("CamoufoxClient.fetchUrl", () => {
 
 	it("throws network on null response from goto", async () => {
 		const launcher = makeFakeLauncher({ pageBehavior: () => ({ nullResponse: true }) });
-		const client = new CamoufoxClient({ launcher });
+		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
 		const p = client.fetchUrl("https://x.test/", { signal: new AbortController().signal });
 		await expect(p).rejects.toMatchObject({ err: { type: "network" } });
 		expect(launcher.fake.pagesClosed).toBe(1);
@@ -68,7 +69,7 @@ describe("CamoufoxClient.fetchUrl", () => {
 				}),
 			}),
 		});
-		const client = new CamoufoxClient({ launcher });
+		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
 		const p = client.fetchUrl("https://x.test/", {
 			signal: new AbortController().signal,
 			timeoutMs: 1_000,
@@ -82,7 +83,7 @@ describe("CamoufoxClient.fetchUrl", () => {
 		const launcher = makeFakeLauncher({
 			pageBehavior: () => ({ gotoDelayMs: 100, status: 200, html: "<html></html>" }),
 		});
-		const client = new CamoufoxClient({ launcher });
+		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
 		const ctrl = new AbortController();
 		const p = client.fetchUrl("https://x.test/", { signal: ctrl.signal });
 		ctrl.abort();
@@ -92,7 +93,7 @@ describe("CamoufoxClient.fetchUrl", () => {
 
 	it("throws playwright_disconnected when browser is gone before the call", async () => {
 		const launcher = makeFakeLauncher();
-		const client = new CamoufoxClient({ launcher });
+		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
 		await client.ensureReady();
 		launcher.fake.setConnected(false);
 		const p = client.fetchUrl("https://x.test/", { signal: new AbortController().signal });
@@ -110,7 +111,7 @@ describe("CamoufoxClient.fetchUrl", () => {
 				contentDelayMs: 50,
 			}),
 		});
-		const client = new CamoufoxClient({ launcher });
+		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
 		const ctrl = new AbortController();
 		const p = client.fetchUrl("https://x.test/", { signal: ctrl.signal });
 		// Abort after goto has resolved but while content() is still pending.
@@ -124,7 +125,7 @@ describe("CamoufoxClient.fetchUrl", () => {
 		const launcher = makeFakeLauncher({
 			pageBehavior: () => ({ status: 500, finalUrl: "https://x.test/" }),
 		});
-		const client = new CamoufoxClient({ launcher });
+		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
 		await client
 			.fetchUrl("https://x.test/", { signal: new AbortController().signal })
 			.catch(() => undefined);

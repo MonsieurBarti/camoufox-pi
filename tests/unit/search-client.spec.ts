@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { CamoufoxClient } from "../../src/client/camoufox-client.js";
 import { makeFakeLauncher } from "../helpers/fake-launcher.js";
+import { safeLookup } from "../helpers/safe-lookup.js";
 
 describe("CamoufoxClient.search", () => {
 	it("returns structured results from the DDG adapter", async () => {
@@ -17,7 +18,7 @@ describe("CamoufoxClient.search", () => {
 				},
 			}),
 		});
-		const client = new CamoufoxClient({ launcher });
+		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
 		const res = await client.search("foo", { signal: new AbortController().signal });
 		expect(res.engine).toBe("duckduckgo");
 		expect(res.query).toBe("foo");
@@ -35,7 +36,7 @@ describe("CamoufoxClient.search", () => {
 				evalResults: { "div.result, div.web-result": [] },
 			}),
 		});
-		const client = new CamoufoxClient({ launcher });
+		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
 		const res = await client.search("nothing", { signal: new AbortController().signal });
 		expect(res.results).toEqual([]);
 		await client.close();
@@ -43,7 +44,7 @@ describe("CamoufoxClient.search", () => {
 
 	it("rejects out-of-range maxResults as config_invalid", async () => {
 		const launcher = makeFakeLauncher();
-		const client = new CamoufoxClient({ launcher });
+		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
 		const p = client.search("x", {
 			signal: new AbortController().signal,
 			maxResults: 0,
@@ -67,7 +68,7 @@ describe("CamoufoxClient.search", () => {
 				},
 			}),
 		});
-		const client = new CamoufoxClient({ launcher });
+		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
 		const res = await client.search("x", { signal: new AbortController().signal, maxResults: 2 });
 		expect(res.results.length).toBe(2);
 		await client.close();

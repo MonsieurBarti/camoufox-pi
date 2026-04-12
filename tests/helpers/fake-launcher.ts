@@ -29,6 +29,8 @@ export interface FakeControls {
 	pagesOpened: number;
 	pagesClosed: number;
 	launchCount: number;
+	contextsOpened: number;
+	contextsClosed: number;
 	connected: boolean;
 	setConnected(value: boolean): void;
 }
@@ -46,6 +48,8 @@ export function makeFakeLauncher(
 		pagesOpened: 0,
 		pagesClosed: 0,
 		launchCount: 0,
+		contextsOpened: 0,
+		contextsClosed: 0,
 		connected: true,
 		setConnected(value: boolean) {
 			controls.connected = value;
@@ -128,16 +132,30 @@ export function makeFakeLauncher(
 		return page;
 	};
 
-	const context = {
-		async newPage(): Promise<Page> {
-			return makePage();
-		},
-		async close(): Promise<void> {},
-	} as unknown as BrowserContext;
+	const makeContext = (): BrowserContext => {
+		controls.contextsOpened += 1;
+		let ctxClosed = false;
+		return {
+			async newPage(): Promise<Page> {
+				return makePage();
+			},
+			async close(): Promise<void> {
+				if (!ctxClosed) {
+					ctxClosed = true;
+					controls.contextsClosed += 1;
+				}
+			},
+		} as unknown as BrowserContext;
+	};
+
+	const defaultContext = makeContext();
 
 	const browser = {
 		isConnected(): boolean {
 			return controls.connected;
+		},
+		async newContext(): Promise<BrowserContext> {
+			return makeContext();
 		},
 		async close(): Promise<void> {
 			controls.connected = false;
@@ -146,13 +164,13 @@ export function makeFakeLauncher(
 
 	return {
 		fake: controls,
-		async launch(_signal?: AbortSignal): Promise<LaunchedBrowser> {
+		async launch(): Promise<LaunchedBrowser> {
 			controls.launchCount += 1;
 			if (opts.launchDelayMs && opts.launchDelayMs > 0) {
 				await new Promise((resolve) => setTimeout(resolve, opts.launchDelayMs));
 			}
 			if (opts.launchFails) throw opts.launchFails;
-			return { browser, context, version: "fake-0.0.0" };
+			return { browser, context: defaultContext, version: "fake-0.0.0" };
 		},
 	};
 }
