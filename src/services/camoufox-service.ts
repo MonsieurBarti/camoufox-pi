@@ -32,11 +32,6 @@ export interface CamoufoxServiceOptions {
 	readonly launcher?: Launcher;
 	/** Optional DNS lookup override; forwarded to the client for test injection. */
 	readonly ssrfLookup?: LookupFn;
-	/**
-	 * @deprecated Transitional shim — src/index.ts still passes launcherFactory.
-	 * Removed in Task 10 when src/index.ts is rewritten. Do NOT use in new code.
-	 */
-	readonly launcherFactory?: () => Launcher;
 }
 
 /**
@@ -56,18 +51,13 @@ export class CamoufoxService {
 
 	constructor(opts: CamoufoxServiceOptions = {}) {
 		this.config = { ...DEFAULT_CONFIG, ...opts.config };
-		// TODO(Task 10): remove launcherFactory shim once src/index.ts is rewritten.
-		let resolvedLauncher = opts.launcher;
-		if (resolvedLauncher === undefined && opts.launcherFactory) {
-			resolvedLauncher = opts.launcherFactory();
-		}
 		const createOpts: {
 			config?: Partial<CamoufoxConfig>;
 			launcher?: Launcher;
 			ssrfLookup?: LookupFn;
 		} = {};
 		if (opts.config !== undefined) createOpts.config = opts.config;
-		if (resolvedLauncher !== undefined) createOpts.launcher = resolvedLauncher;
+		if (opts.launcher !== undefined) createOpts.launcher = opts.launcher;
 		if (opts.ssrfLookup !== undefined) createOpts.ssrfLookup = opts.ssrfLookup;
 		this.client = createClient(createOpts);
 	}
