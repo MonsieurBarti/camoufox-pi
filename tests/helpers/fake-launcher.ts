@@ -98,7 +98,10 @@ export function makeFakeLauncher(
 							(v) => v !== null && typeof v === "object" && !("querySelector" in (v as object)),
 						)
 					) {
-						return value as unknown as T;
+						// Honor maxResults (first evaluator arg) so smart-passthrough tests
+						// exercise the cap the same way the real adapter evaluator would.
+						const max = typeof args[0] === "number" ? args[0] : value.length;
+						return value.slice(0, max) as unknown as T;
 					}
 					return evaluator(value as unknown[], ...args);
 				}

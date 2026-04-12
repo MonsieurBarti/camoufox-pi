@@ -84,7 +84,7 @@ export class CamoufoxClient {
 			waitUntil: adapter.waitStrategy.readyState,
 		});
 		try {
-			const results = (await adapter.parseResults(page, maxResults)).slice(0, maxResults);
+			const results = await adapter.parseResults(page, maxResults);
 			return { results, engine: "duckduckgo", query };
 		} finally {
 			cleanup();
