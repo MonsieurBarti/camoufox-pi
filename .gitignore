@@ -35,7 +35,6 @@ yarn-error.log*
 # Worktrees
 .worktrees/
 
-# Superpowers docs + plans
-docs/superpowers/
-docs/plans/
+# Docs (local-only; not published)
+docs/
 .hippo/

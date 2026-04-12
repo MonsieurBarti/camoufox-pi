@@ -101,7 +101,7 @@ Then reload PI with `/reload` (or restart it). First tool call downloads the Cam
 
 ## Configuration
 
-v0.1.0 does **not** load a config file. All configuration is per-call via tool parameters. A layered config (project-local + user-global + env + fs.watch reload) lands in a later slice — see [docs/SPEC.md](docs/SPEC.md) §8.
+v0.1.0 does **not** load a config file. All configuration is per-call via tool parameters. A layered config (project-local + user-global + env + fs.watch reload) lands in a later slice.
 
 Defaults baked into `DEFAULT_CONFIG`:
 
@@ -182,7 +182,7 @@ Commit messages must follow [Conventional Commits](https://www.conventionalcommi
 
 ## Known limitations
 
-v0.1.0 is the foundational slice. The following are deliberately deferred to later slices (tracked in [docs/SPEC.md](docs/SPEC.md)):
+v0.1.0 is the foundational slice. The following are deliberately deferred to later slices:
 
 - **DuckDuckGo only.** Google / Brave / Bing adapters land in follow-up slices; Google requires stealth tuning that deserves its own slice.
 - **No retries.** `network`, `timeout`, `playwright_disconnected`, and `browser_crashed` surface as errors — no exponential backoff.
@@ -194,7 +194,7 @@ v0.1.0 is the foundational slice. The following are deliberately deferred to lat
 - **Sticky launch failure.** A failed `ensureReady()` marks the client permanently failed. Retrying requires reconstructing the service. Auto-reconnect lands in the retry-and-reconnect slice.
 - **Third-party Node wrapper.** Upstream Camoufox endorses only the Python wrapper. `camoufox-js` (Apify, MPL-2.0) is the Node port; launcher isolation keeps it swappable.
 
-See [docs/SPEC.md](docs/SPEC.md) §17 for the full limitations list and [docs/superpowers/specs/2026-04-12-foundational-slice-design.md](docs/superpowers/specs/2026-04-12-foundational-slice-design.md) §7 for the deferred-feature landing plan.
+Detailed design and deferred-feature landing plan live in local-only `docs/` (not published).
 
 ## Contributing
 
