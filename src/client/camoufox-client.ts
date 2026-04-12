@@ -14,7 +14,12 @@ import {
 	createEventEmitter,
 	newSpanId,
 } from "./events.js";
-import { type RenderMode, resolveWaitUntil, waitForSelectorOrThrow } from "./fetch-pipeline.js";
+import {
+	type RenderMode,
+	extractSlice,
+	resolveWaitUntil,
+	waitForSelectorOrThrow,
+} from "./fetch-pipeline.js";
 import type { Launcher } from "./launcher.js";
 import { combineSignals } from "./signal.js";
 
@@ -151,6 +156,7 @@ export class CamoufoxClient {
 			isolate?: boolean;
 			renderMode?: RenderMode;
 			waitForSelector?: string;
+			selector?: string;
 		},
 	): Promise<{
 		html: string;
@@ -213,6 +219,22 @@ export class CamoufoxClient {
 					reason: "must be a non-empty string",
 				});
 			}
+			if (opts.selector !== undefined) {
+				if (typeof opts.selector !== "string" || opts.selector.length === 0) {
+					throw new CamoufoxErrorBox({
+						type: "config_invalid",
+						field: "selector",
+						reason: "must be a non-empty string",
+					});
+				}
+				if (opts.selector.length > 512) {
+					throw new CamoufoxErrorBox({
+						type: "config_invalid",
+						field: "selector",
+						reason: "exceeds 512-char cap",
+					});
+				}
+			}
 			try {
 				await assertSafeTarget(url, this.ssrfLookup ? { lookup: this.ssrfLookup } : {});
 			} catch (err) {
@@ -242,7 +264,7 @@ export class CamoufoxClient {
 					);
 					await waitForSelectorOrThrow(page, opts.waitForSelector, remaining);
 				}
-				const rawHtml = await page.content();
+				const { html: rawHtml } = await extractSlice(page, opts.selector);
 				const maxBytes = opts.maxBytes ?? this.config.maxBytes;
 				const rawBytes = Buffer.byteLength(rawHtml, "utf8");
 				let html = rawHtml;
@@ -272,7 +294,7 @@ export class CamoufoxClient {
 					durationMs: Date.now() - started,
 					renderMode,
 					usedWaitForSelector: opts.waitForSelector !== undefined,
-					usedSelector: false,
+					usedSelector: opts.selector !== undefined,
 					format: "html",
 					screenshotBytes: null,
 				});
