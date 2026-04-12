@@ -111,6 +111,79 @@ Defaults baked into `DEFAULT_CONFIG`:
 | `maxBytes` | `2097152` | 2 MiB response cap for `fetch_url`, overridable via `max_bytes` |
 | `defaultEngine` | `"duckduckgo"` | Only valid value in v0.1.0 |
 
+## Programmatic API (library mode)
+
+`@the-forge-flow/camoufox-pi` can be imported directly from non-PI code (TFF daemon, scripts, CI harnesses). This is an off-label integration path — PI itself does not officially document cross-extension imports — but the client is PI-agnostic by design and has no PI runtime dependency.
+
+```typescript
+import { createClient } from "@the-forge-flow/camoufox-pi";
+
+const client = createClient();
+// Optional: wait for ready up-front (factory is lazy; first op would block otherwise).
+await client.ensureReady();
+
+const { html, status } = await client.fetchUrl("https://example.com", {
+  signal: AbortSignal.timeout(30_000),
+});
+
+const { results } = await client.search("claude code", {
+  signal: AbortSignal.timeout(30_000),
+  maxResults: 10,
+});
+
+await client.close();
+```
+
+### `createClient(opts?)`
+
+- `opts.config?: Partial<CamoufoxConfig>` — shallow-merged over `DEFAULT_CONFIG`.
+- `opts.launcher?: Launcher` — swap in a custom launcher (tests inject a fake).
+
+Returns a `CamoufoxClient` synchronously. `ensureReady()` is fired in the background; the first op awaits the in-flight promise.
+
+### `client.checkHealth({ probe? })`
+
+Lightweight snapshot (default):
+
+```typescript
+{
+  status: "launching" | "ready" | "failed" | "closed",
+  browserConnected: boolean,
+  browserVersion: string | null,
+  launchedAt: number | null,
+  uptimeMs: number | null,
+  lastError: CamoufoxError | null,
+}
+```
+
+Active probe (`{ probe: true }`) adds `probe: { ok, roundTripMs, error }` by opening and closing an `about:blank` page with a fixed 2 s timeout. Probe failure does NOT mutate client state.
+
+### Events
+
+`client.events` is a typed `EventEmitter` with five events:
+
+| Event | Payload | Emitted when |
+|---|---|---|
+| `browser_launch` | `{ spanId, browserVersion, durationMs }` | Launch completes successfully |
+| `binary_download_progress` | `{ bytesDownloaded, bytesTotal }` | camoufox-js downloads the binary (first launch only) |
+| `fetch_url` | `{ spanId, url, finalUrl, status, bytes, truncated, isolate, durationMs }` | `fetchUrl()` resolves |
+| `search` | `{ spanId, engine, query, maxResults, resultCount, atLimit, durationMs }` | `search()` resolves |
+| `error` | `{ spanId, op, error: CamoufoxError }` | Any op throws — fired BEFORE `throw` |
+
+`spanId` is an 8-char hex string minted per op. The `error` event always fires before the `CamoufoxErrorBox` reaches the caller's `catch`. A listener that throws is caught (`console.error`) and does NOT mask the original error, and other listeners on the same event still run. Async listener rejections are swallowed-and-logged too.
+
+## Event reference (inside PI)
+
+When the extension is loaded by PI, `CamoufoxService.attach(pi)` bridges every client event to `pi.events` under the `camoufox:` prefix. Other PI extensions subscribe idiomatically:
+
+```typescript
+pi.events.on("camoufox:fetch_url", (e) => {
+  console.log(`fetch_url ${e.url} → ${e.status} (${e.durationMs} ms)`);
+});
+```
+
+Binary-download progress additionally drives `pi.ui.setStatus("camoufox:binary", …)` for a footer status line during the ~500 MB first-use download.
+
 ## Architecture
 
 ```

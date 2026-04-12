@@ -4,6 +4,7 @@
 
 import type { Browser, BrowserContext, Page, Response } from "playwright-core";
 
+import type { BinaryDownloadProgressEvent } from "../../src/client/events.js";
 import type { LaunchedBrowser, Launcher } from "../../src/client/launcher.js";
 
 export interface FakePageResponse {
@@ -39,6 +40,7 @@ export interface FakeLauncherOptions {
 	pageBehavior?: (url: string) => FakePageResponse;
 	launchDelayMs?: number;
 	launchFails?: Error;
+	progressEvents?: BinaryDownloadProgressEvent[];
 }
 
 export function makeFakeLauncher(
@@ -164,8 +166,13 @@ export function makeFakeLauncher(
 
 	return {
 		fake: controls,
-		async launch(): Promise<LaunchedBrowser> {
+		async launch(
+			launchOpts: { onProgress?: (e: BinaryDownloadProgressEvent) => void } = {},
+		): Promise<LaunchedBrowser> {
 			controls.launchCount += 1;
+			if (opts.progressEvents && launchOpts.onProgress) {
+				for (const ev of opts.progressEvents) launchOpts.onProgress(ev);
+			}
 			if (opts.launchDelayMs && opts.launchDelayMs > 0) {
 				await new Promise((resolve) => setTimeout(resolve, opts.launchDelayMs));
 			}

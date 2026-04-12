@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { CamoufoxClient } from "../../src/client/camoufox-client.js";
+import type { LookupFn } from "../../src/security/ssrf.js";
 import { makeFakeLauncher } from "../helpers/fake-launcher.js";
 import { safeLookup } from "../helpers/safe-lookup.js";
 
@@ -71,6 +72,17 @@ describe("CamoufoxClient.search", () => {
 		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
 		const res = await client.search("x", { signal: new AbortController().signal, maxResults: 2 });
 		expect(res.results.length).toBe(2);
+		await client.close();
+	});
+
+	it("rejects search URL that resolves to a private IP (SSRF)", async () => {
+		const privateLookup = (async () => [{ address: "10.0.0.1", family: 4 }]) as unknown as LookupFn;
+		const launcher = makeFakeLauncher();
+		const client = new CamoufoxClient({ launcher, ssrfLookup: privateLookup });
+		await client.ensureReady();
+		await expect(
+			client.search("test", { signal: new AbortController().signal }),
+		).rejects.toMatchObject({ err: { type: "config_invalid", field: "url" } });
 		await client.close();
 	});
 });

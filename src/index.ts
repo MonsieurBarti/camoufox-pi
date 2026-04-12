@@ -1,7 +1,7 @@
 import type { TObject } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 
-import { RealLauncher } from "./client/launcher.js";
+import { type Launcher, RealLauncher } from "./client/launcher.js";
 import type { CommandContext, CommandDefinition } from "./commands/index.js";
 import { createAllCommands } from "./commands/index.js";
 import { CamoufoxErrorBox } from "./errors.js";
@@ -12,21 +12,37 @@ import { createAllTools } from "./tools/index.js";
 import { checkForUpdates } from "./update-check.js";
 
 // ---------------------------------------------------------------------------
-// Library-style named exports. Let other PI extensions (e.g. TFF) import
-// CamoufoxService and factories directly instead of spawning a child `pi`
-// process. The default export (camoufoxExtension) remains the canonical
-// PI-extension entry.
+// Library-style named exports — non-PI consumers (TFF daemon, scripts, CI)
+// import directly. This is off-label per PI docs but mechanically sound
+// because CamoufoxClient has no runtime dependency on pi-coding-agent.
 // ---------------------------------------------------------------------------
 
+export { CamoufoxClient } from "./client/camoufox-client.js";
+export { createClient } from "./client/create-client.js";
+export { RealLauncher } from "./client/launcher.js";
 export { CamoufoxService } from "./services/camoufox-service.js";
 export { createAllTools } from "./tools/index.js";
 export { createAllCommands } from "./commands/index.js";
 export { createAllHooks } from "./hooks/index.js";
+export { CamoufoxErrorBox } from "./errors.js";
 
+export type { CamoufoxConfig } from "./types.js";
 export type { ToolDefinition } from "./tools/index.js";
 export type { CommandDefinition, CommandContext } from "./commands/index.js";
 export type { HookDefinition } from "./hooks/index.js";
-export type { CamoufoxConfig } from "./types.js";
+export type { Launcher, LaunchedBrowser, LaunchOpts } from "./client/launcher.js";
+export type { CreateClientOptions } from "./client/create-client.js";
+export type { HealthStatus } from "./client/camoufox-client.js";
+export type {
+	CamoufoxEvents,
+	CamoufoxEventEmitter,
+	SearchEvent,
+	FetchUrlEvent,
+	BrowserLaunchEvent,
+	BinaryDownloadProgressEvent,
+	ErrorEvent,
+} from "./client/events.js";
+export type { CamoufoxError } from "./errors.js";
 
 // ---------------------------------------------------------------------------
 // Structural PI API — minimal subset of what @mariozechner/pi-coding-agent
@@ -63,9 +79,7 @@ interface PiRegisteredCommand {
 }
 
 interface PiCommandContext {
-	ui?: {
-		notify?: (message: string, level?: string) => void;
-	};
+	ui?: { notify?: (message: string, level?: string) => void };
 	cwd?: string;
 }
 
@@ -78,13 +92,22 @@ export interface PiExtensionApi {
 		args: string[],
 		opts?: { timeout?: number },
 	) => Promise<{ stdout: string; code: number }>;
+	events: {
+		emit(event: string, payload: unknown): boolean;
+		on?: (event: string, fn: (p: unknown) => void) => void;
+	};
+	ui?: {
+		setStatus?: (key: string, message: string | null) => void;
+		notify?: (message: string, level?: string) => void;
+	};
 	cwd?: string;
 }
 
 // ---------------------------------------------------------------------------
-// Boundary adapters: bridge tool/command definitions to PI's structural shape
-// without casts. `wrapTool` uses TypeBox's runtime Value.Check to narrow the
-// unknown input to Static<S> before delegating to the typed execute().
+// Boundary adapters: bridge tool/command definitions to PI's structural
+// shape without casts. `wrapTool` uses TypeBox's runtime Value.Check to
+// narrow the unknown input to Static<S> before delegating to the typed
+// execute().
 // ---------------------------------------------------------------------------
 
 function wrapTool<S extends TObject>(def: ToolDefinition<S>): PiRegisteredTool {
@@ -136,41 +159,44 @@ function wrapCommand(def: CommandDefinition): PiRegisteredCommand {
 }
 
 // ---------------------------------------------------------------------------
+// Test seam — unit tests swap the factory to inject a fake Launcher.
+// Production code calls camoufoxExtension(pi) and gets a RealLauncher.
+// ---------------------------------------------------------------------------
+
+/**
+ * @internal Test-only seam. Unit tests swap `fn` to inject a fake Launcher.
+ * Do NOT read or mutate this from production code. The identifier is
+ * intentionally SCREAMING_CASE to signal "you are editing an internal
+ * contract".
+ */
+export const __TEST_LAUNCHER_FACTORY__: { fn: () => Launcher } = {
+	fn: () => new RealLauncher(),
+};
+
+// ---------------------------------------------------------------------------
 // Default export — called by PI with its ExtensionAPI instance at startup.
+// Tools and hooks are registered at LOAD TIME so they appear in PI's
+// startup system prompt. Service attaches session hooks and the event
+// bridge synchronously after construction.
 // ---------------------------------------------------------------------------
 
 export default function camoufoxExtension(pi: PiExtensionApi): void {
-	const service = new CamoufoxService({
-		launcherFactory: () => new RealLauncher(),
-	});
+	const service = new CamoufoxService({ launcher: __TEST_LAUNCHER_FACTORY__.fn() });
 
-	pi.on("session_start", async (_event, ctx) => {
-		const cwd = (ctx as { cwd?: string })?.cwd ?? pi.cwd ?? process.cwd();
-		await service.initialize(cwd);
+	for (const def of createAllTools(service)) pi.registerTool(wrapTool(def));
+	for (const def of createAllCommands(service)) pi.registerCommand(def.name, wrapCommand(def));
+	for (const hook of createAllHooks(service)) pi.on(hook.event, hook.handler);
 
-		// Register tools + commands AFTER initialize so createAllTools can
-		// access service.getClient(). Per @mariozechner/pi-coding-agent docs,
-		// pi.registerTool() works after startup as well as during load.
-		for (const def of createAllTools(service)) {
-			pi.registerTool(wrapTool(def));
-		}
-		for (const def of createAllCommands(service)) {
-			pi.registerCommand(def.name, wrapCommand(def));
-		}
-		for (const hook of createAllHooks(service)) {
-			pi.on(hook.event, hook.handler);
-		}
+	service.attach(pi);
 
-		const updateInfo = await checkForUpdates(pi);
-		if (updateInfo?.updateAvailable) {
-			(ctx as { ui?: { notify?: (message: string, level?: string) => void } }).ui?.notify?.(
-				`📦 Update available: ${updateInfo.latestVersion} (you have ${updateInfo.currentVersion}). Run: pi install npm:@the-forge-flow/camoufox-pi`,
-				"info",
-			);
-		}
-	});
-
-	pi.on("session_shutdown", async () => {
-		await service.shutdown();
+	queueMicrotask(() => {
+		void checkForUpdates(pi as unknown as Parameters<typeof checkForUpdates>[0]).then((info) => {
+			if (info?.updateAvailable) {
+				pi.ui?.notify?.(
+					`📦 Update available: ${info.latestVersion} (you have ${info.currentVersion}). Run: pi install npm:@the-forge-flow/camoufox-pi`,
+					"info",
+				);
+			}
+		});
 	});
 }
