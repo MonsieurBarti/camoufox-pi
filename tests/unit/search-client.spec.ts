@@ -41,6 +41,19 @@ describe("CamoufoxClient.search", () => {
 		await client.close();
 	});
 
+	it("rejects out-of-range maxResults as config_invalid", async () => {
+		const launcher = makeFakeLauncher();
+		const client = new CamoufoxClient({ launcher });
+		const p = client.search("x", {
+			signal: new AbortController().signal,
+			maxResults: 0,
+		});
+		await expect(p).rejects.toMatchObject({
+			err: { type: "config_invalid", field: "maxResults" },
+		});
+		await client.close();
+	});
+
 	it("respects maxResults", async () => {
 		const launcher = makeFakeLauncher({
 			pageBehavior: () => ({

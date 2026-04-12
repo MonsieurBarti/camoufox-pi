@@ -20,7 +20,7 @@ describe("tff-search_web tool", () => {
 		expect(res.details).toMatchObject({
 			engine: "duckduckgo",
 			query: "hello",
-			truncated: false,
+			atLimit: false,
 		});
 		expect(Array.isArray(res.details.results)).toBe(true);
 		await client.close();
@@ -62,7 +62,7 @@ describe("tff-search_web tool", () => {
 		const tool = createSearchWebTool(client);
 		const res = await tool.execute("id", { query: "no-hits" }, new AbortController().signal);
 		expect(res.details.results).toEqual([]);
-		expect(res.details.truncated).toBe(false);
+		expect(res.details.atLimit).toBe(false);
 		await client.close();
 	});
 });

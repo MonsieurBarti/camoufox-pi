@@ -16,6 +16,8 @@ export interface FakePageResponse {
 	nullResponse?: boolean;
 	/** Delay in ms before goto resolves, simulated via setTimeout. */
 	gotoDelayMs?: number;
+	/** Delay in ms before content() resolves, simulated via setTimeout. */
+	contentDelayMs?: number;
 	/**
 	 * Optional DOM data queried via page.$$eval (used by adapters).
 	 * Keyed by selector; value is whatever the evaluator returns.
@@ -76,6 +78,12 @@ export function makeFakeLauncher(
 			},
 			async content(): Promise<string> {
 				const behavior = pageBehavior(currentUrl);
+				if (behavior.contentDelayMs && behavior.contentDelayMs > 0) {
+					await new Promise((resolve) => setTimeout(resolve, behavior.contentDelayMs));
+				}
+				if (closed) {
+					throw new Error("Target page, context or browser has been closed");
+				}
 				return behavior.html ?? "<html></html>";
 			},
 			url(): string {

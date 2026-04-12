@@ -35,7 +35,7 @@ export function createSearchWebTool(
 				maxResults,
 				...(input.timeout_ms !== undefined ? { timeoutMs: input.timeout_ms } : {}),
 			});
-			const truncated = results.length === maxResults;
+			const atLimit = results.length === maxResults;
 			const topLines = results
 				.slice(0, 3)
 				.map((r) => `  ${r.rank}. ${r.title} — ${r.url}`)
@@ -50,7 +50,7 @@ export function createSearchWebTool(
 				details: {
 					engine,
 					query,
-					truncated,
+					atLimit,
 					results: results.map((r) => ({ ...r })),
 				},
 			};

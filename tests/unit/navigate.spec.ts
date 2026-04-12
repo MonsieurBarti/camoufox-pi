@@ -71,7 +71,7 @@ describe("CamoufoxClient.fetchUrl", () => {
 		const client = new CamoufoxClient({ launcher });
 		const p = client.fetchUrl("https://x.test/", {
 			signal: new AbortController().signal,
-			timeoutMs: 100,
+			timeoutMs: 1_000,
 		});
 		await expect(p).rejects.toMatchObject({ err: { type: "timeout", phase: "nav" } });
 		expect(launcher.fake.pagesClosed).toBe(1);
@@ -98,6 +98,25 @@ describe("CamoufoxClient.fetchUrl", () => {
 		const p = client.fetchUrl("https://x.test/", { signal: new AbortController().signal });
 		await expect(p).rejects.toBeInstanceOf(CamoufoxErrorBox);
 		await expect(p).rejects.toMatchObject({ err: { type: "playwright_disconnected" } });
+		await client.close();
+	});
+
+	it("maps abort during page.content() to aborted (post-goto abort)", async () => {
+		const launcher = makeFakeLauncher({
+			pageBehavior: () => ({
+				status: 200,
+				finalUrl: "https://x.test/",
+				html: "<html></html>",
+				contentDelayMs: 50,
+			}),
+		});
+		const client = new CamoufoxClient({ launcher });
+		const ctrl = new AbortController();
+		const p = client.fetchUrl("https://x.test/", { signal: ctrl.signal });
+		// Abort after goto has resolved but while content() is still pending.
+		setTimeout(() => ctrl.abort(), 10);
+		await expect(p).rejects.toBeInstanceOf(CamoufoxErrorBox);
+		await expect(p).rejects.toMatchObject({ err: { type: "aborted" } });
 		await client.close();
 	});
 

@@ -56,6 +56,16 @@ export class CamoufoxClient {
 		opts: { signal: AbortSignal; timeoutMs?: number },
 	): Promise<{ html: string; status: number; finalUrl: string }> {
 		await this.ensureReady(opts.signal);
+		if (
+			opts.timeoutMs !== undefined &&
+			(!Number.isInteger(opts.timeoutMs) || opts.timeoutMs < 1_000 || opts.timeoutMs > 120_000)
+		) {
+			throw new CamoufoxErrorBox({
+				type: "config_invalid",
+				field: "timeoutMs",
+				reason: `must be integer in [1000, 120000], got ${opts.timeoutMs}`,
+			});
+		}
 		const { page, response, cleanup } = await this.navigate(url, {
 			signal: opts.signal,
 			timeoutMs: opts.timeoutMs ?? this.config.timeoutMs,
@@ -64,6 +74,12 @@ export class CamoufoxClient {
 		try {
 			const html = await page.content();
 			return { html, status: response.status(), finalUrl: response.url() };
+		} catch (err) {
+			if (opts.signal.aborted) {
+				throw new CamoufoxErrorBox({ type: "aborted" });
+			}
+			if (err instanceof CamoufoxErrorBox) throw err;
+			throw err;
 		} finally {
 			cleanup();
 			await page.close().catch(() => undefined);
@@ -75,7 +91,24 @@ export class CamoufoxClient {
 		opts: { signal: AbortSignal; maxResults?: number; timeoutMs?: number },
 	): Promise<{ results: RawResult[]; engine: "duckduckgo"; query: string }> {
 		await this.ensureReady(opts.signal);
-		const maxResults = Math.max(1, Math.min(50, opts.maxResults ?? 10));
+		const maxResults = opts.maxResults ?? 10;
+		if (!Number.isInteger(maxResults) || maxResults < 1 || maxResults > 50) {
+			throw new CamoufoxErrorBox({
+				type: "config_invalid",
+				field: "maxResults",
+				reason: `must be integer in [1, 50], got ${maxResults}`,
+			});
+		}
+		if (
+			opts.timeoutMs !== undefined &&
+			(!Number.isInteger(opts.timeoutMs) || opts.timeoutMs < 1_000 || opts.timeoutMs > 120_000)
+		) {
+			throw new CamoufoxErrorBox({
+				type: "config_invalid",
+				field: "timeoutMs",
+				reason: `must be integer in [1000, 120000], got ${opts.timeoutMs}`,
+			});
+		}
 		const adapter = duckduckgoAdapter;
 		const url = adapter.buildUrl(query);
 		const { page, cleanup } = await this.navigate(url, {
@@ -86,6 +119,12 @@ export class CamoufoxClient {
 		try {
 			const results = await adapter.parseResults(page, maxResults);
 			return { results, engine: "duckduckgo", query };
+		} catch (err) {
+			if (opts.signal.aborted) {
+				throw new CamoufoxErrorBox({ type: "aborted" });
+			}
+			if (err instanceof CamoufoxErrorBox) throw err;
+			throw err;
 		} finally {
 			cleanup();
 			await page.close().catch(() => undefined);
