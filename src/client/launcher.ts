@@ -14,11 +14,15 @@ export interface LaunchedBrowser {
 }
 
 export interface LaunchOpts {
-	readonly signal?: AbortSignal;
 	readonly onProgress?: (e: BinaryDownloadProgressEvent) => void;
 }
 
 export interface Launcher {
+	/**
+	 * Launch the browser. Cancellation of an in-flight launch is not
+	 * supported in this slice — `ensureReady()` awaits the launch
+	 * regardless. If this becomes needed, thread an AbortSignal through.
+	 */
 	launch(opts?: LaunchOpts): Promise<LaunchedBrowser>;
 }
 

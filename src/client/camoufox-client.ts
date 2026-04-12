@@ -39,7 +39,6 @@ interface ReadyState {
 	error?: CamoufoxErrorBox;
 	launchPromise?: Promise<void>;
 	launchedAt?: number;
-	launchSpanId?: string;
 }
 
 export interface CamoufoxClientOptions {
@@ -138,7 +137,7 @@ export class CamoufoxClient {
 		}
 		const spanId = newSpanId();
 		const launchPromise = this.doLaunch(spanId);
-		this.state = { status: "launching", launchPromise, launchSpanId: spanId };
+		this.state = { status: "launching", launchPromise };
 		await this.awaitWithSignal(launchPromise, signal);
 	}
 
@@ -444,7 +443,6 @@ export class CamoufoxClient {
 				context,
 				version,
 				launchedAt: Date.now(),
-				launchSpanId: spanId,
 			};
 			const payload: BrowserLaunchEvent = {
 				spanId,

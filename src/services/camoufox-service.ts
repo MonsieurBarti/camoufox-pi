@@ -82,6 +82,20 @@ export class CamoufoxService {
 			"error",
 		];
 		for (const name of EVENT_NAMES) {
+			if (name === "binary_download_progress") {
+				const handler = (e: BinaryDownloadProgressEvent): void => {
+					pi.events.emit(`camoufox:${name}`, e);
+					const pct = e.bytesTotal ? Math.floor((e.bytesDownloaded / e.bytesTotal) * 100) : null;
+					const msg =
+						pct !== null
+							? `Downloading Camoufox… ${pct}%`
+							: `Downloading Camoufox… ${Math.floor(e.bytesDownloaded / 1_048_576)} MiB`;
+					pi.ui?.setStatus?.("camoufox:binary", msg);
+				};
+				this.client.events.on(name, handler);
+				this.bridges.push(() => this.client.events.off(name, handler));
+				continue;
+			}
 			const forward = (payload: unknown): void => {
 				pi.events.emit(`camoufox:${name}`, payload);
 			};
@@ -92,17 +106,6 @@ export class CamoufoxService {
 				this.client.events.off(name, forward as any);
 			});
 		}
-
-		const onProgress = (e: BinaryDownloadProgressEvent): void => {
-			const pct = e.bytesTotal ? Math.floor((e.bytesDownloaded / e.bytesTotal) * 100) : null;
-			const msg =
-				pct !== null
-					? `Downloading Camoufox… ${pct}%`
-					: `Downloading Camoufox… ${Math.floor(e.bytesDownloaded / 1_048_576)} MiB`;
-			pi.ui?.setStatus?.("camoufox:binary", msg);
-		};
-		this.client.events.on("binary_download_progress", onProgress);
-		this.bridges.push(() => this.client.events.off("binary_download_progress", onProgress));
 
 		const onLaunch = (): void => {
 			pi.ui?.setStatus?.("camoufox:binary", null);
@@ -117,9 +120,9 @@ export class CamoufoxService {
 		pi.on("session_shutdown", () => this.shutdown());
 	}
 
-	async initialize(cwd: string, _signal?: AbortSignal): Promise<void> {
+	async initialize(cwd: string, signal?: AbortSignal): Promise<void> {
 		this.basePath = cwd;
-		await this.client.ensureReady();
+		await this.client.ensureReady(signal);
 	}
 
 	async shutdown(): Promise<void> {

@@ -163,7 +163,13 @@ function wrapCommand(def: CommandDefinition): PiRegisteredCommand {
 // Production code calls camoufoxExtension(pi) and gets a RealLauncher.
 // ---------------------------------------------------------------------------
 
-export const __test_launcherFactory__: { fn: () => Launcher } = {
+/**
+ * @internal Test-only seam. Unit tests swap `fn` to inject a fake Launcher.
+ * Do NOT read or mutate this from production code. The identifier is
+ * intentionally SCREAMING_CASE to signal "you are editing an internal
+ * contract".
+ */
+export const __TEST_LAUNCHER_FACTORY__: { fn: () => Launcher } = {
 	fn: () => new RealLauncher(),
 };
 
@@ -175,7 +181,7 @@ export const __test_launcherFactory__: { fn: () => Launcher } = {
 // ---------------------------------------------------------------------------
 
 export default function camoufoxExtension(pi: PiExtensionApi): void {
-	const service = new CamoufoxService({ launcher: __test_launcherFactory__.fn() });
+	const service = new CamoufoxService({ launcher: __TEST_LAUNCHER_FACTORY__.fn() });
 
 	for (const def of createAllTools(service)) pi.registerTool(wrapTool(def));
 	for (const def of createAllCommands(service)) pi.registerCommand(def.name, wrapCommand(def));

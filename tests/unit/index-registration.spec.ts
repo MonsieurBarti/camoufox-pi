@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { RealLauncher } from "../../src/client/launcher.js";
 import camoufoxExtension, {
-	__test_launcherFactory__,
+	__TEST_LAUNCHER_FACTORY__,
 	type PiExtensionApi,
 } from "../../src/index.js";
 import { makeFakeLauncher } from "../helpers/fake-launcher.js";
@@ -28,10 +28,10 @@ function makeStubPi() {
 
 describe("extension load-time registration", () => {
 	beforeEach(() => {
-		__test_launcherFactory__.fn = () => makeFakeLauncher();
+		__TEST_LAUNCHER_FACTORY__.fn = () => makeFakeLauncher();
 	});
 	afterEach(() => {
-		__test_launcherFactory__.fn = () => new RealLauncher();
+		__TEST_LAUNCHER_FACTORY__.fn = () => new RealLauncher();
 	});
 
 	it("registers both tools before any session_start event fires", () => {

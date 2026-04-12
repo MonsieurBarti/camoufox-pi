@@ -44,6 +44,25 @@ describe("CamoufoxService.attach — event bridge", () => {
 		expect(calledEvents).toContain("camoufox:browser_launch");
 		expect(calledEvents).toContain("camoufox:fetch_url");
 		expect(calledEvents).toContain("camoufox:binary_download_progress");
+		// Emit search + error directly to trigger their forwarders without
+		// re-triggering full op paths.
+		service.client.events.emit("search", {
+			spanId: "00000000",
+			engine: "duckduckgo",
+			query: "q",
+			maxResults: 10,
+			durationMs: 0,
+			resultCount: 0,
+			atLimit: false,
+		});
+		service.client.events.emit("error", {
+			spanId: "00000000",
+			op: "fetchUrl",
+			error: { type: "aborted" },
+		});
+		const allEvents = piEmit.mock.calls.map((c) => c[0]);
+		expect(allEvents).toContain("camoufox:search");
+		expect(allEvents).toContain("camoufox:error");
 	});
 
 	it("forwards error event on op failure", async () => {
