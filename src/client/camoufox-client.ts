@@ -1,9 +1,10 @@
-import type { Browser, BrowserContext } from "playwright-core";
+import type { Browser, BrowserContext, Page } from "playwright-core";
 
-import { CamoufoxErrorBox } from "../errors.js";
+import { CamoufoxErrorBox, mapPlaywrightError } from "../errors.js";
 import type { CamoufoxConfig } from "../types.js";
 import { DEFAULT_CONFIG } from "../types.js";
 import type { Launcher } from "./launcher.js";
+import { combineSignals } from "./signal.js";
 
 interface ReadyState {
 	status: "idle" | "launching" | "ready" | "failed" | "closed";
@@ -46,6 +47,80 @@ export class CamoufoxClient {
 		const launchPromise = this.doLaunch();
 		this.state = { status: "launching", launchPromise };
 		await this.awaitWithSignal(launchPromise, signal);
+	}
+
+	async fetchUrl(
+		url: string,
+		opts: { signal: AbortSignal; timeoutMs?: number },
+	): Promise<{ html: string; status: number; finalUrl: string }> {
+		await this.ensureReady(opts.signal);
+		const { page, response, cleanup } = await this.navigate(url, {
+			signal: opts.signal,
+			timeoutMs: opts.timeoutMs ?? this.config.timeoutMs,
+			waitUntil: "load",
+		});
+		try {
+			const html = await page.content();
+			return { html, status: response.status(), finalUrl: response.url() };
+		} finally {
+			cleanup();
+			await page.close().catch(() => undefined);
+		}
+	}
+
+	protected async navigate(
+		url: string,
+		opts: {
+			signal: AbortSignal;
+			timeoutMs: number;
+			waitUntil: "load" | "domcontentloaded" | "networkidle";
+		},
+	): Promise<{
+		page: Page;
+		response: { status(): number; url(): string };
+		cleanup: () => void;
+	}> {
+		const context = this.getContext();
+		const combined = combineSignals(opts.signal, opts.timeoutMs);
+		const page = await context.newPage();
+		const abortHandler = () => {
+			page.close().catch(() => undefined);
+		};
+		combined.signal.addEventListener("abort", abortHandler, { once: true });
+		const cleanup = () => {
+			combined.signal.removeEventListener("abort", abortHandler);
+			combined.cleanup();
+		};
+		const started = Date.now();
+		try {
+			const response = await page.goto(url, {
+				timeout: opts.timeoutMs,
+				waitUntil: opts.waitUntil,
+			});
+			if (!response) {
+				throw new CamoufoxErrorBox({
+					type: "network",
+					cause: "goto returned null",
+					url,
+				});
+			}
+			const status = response.status();
+			if (status >= 400) {
+				throw new CamoufoxErrorBox({ type: "http", status, url: response.url() });
+			}
+			return { page, response, cleanup };
+		} catch (err) {
+			cleanup();
+			await page.close().catch(() => undefined);
+			if (err instanceof CamoufoxErrorBox) throw err;
+			const mapped = mapPlaywrightError(err, {
+				url,
+				phase: "nav",
+				elapsedMs: Date.now() - started,
+				signal: combined.signal,
+			});
+			throw new CamoufoxErrorBox(mapped);
+		}
 	}
 
 	async close(): Promise<void> {
