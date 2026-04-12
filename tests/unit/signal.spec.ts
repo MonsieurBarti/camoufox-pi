@@ -50,4 +50,15 @@ describe("combineSignals", () => {
 		ctrl.abort();
 		expect(signal.aborted).toBe(false);
 	});
+
+	it("short-circuits when external is already aborted", () => {
+		const ctrl = new AbortController();
+		ctrl.abort();
+		const { signal, cleanup } = combineSignals(ctrl.signal, 1_000);
+		expect(signal.aborted).toBe(true);
+		expect(() => cleanup()).not.toThrow();
+		vi.advanceTimersByTime(1_000);
+		// Timer must not keep the signal in some altered state; already aborted.
+		expect(signal.aborted).toBe(true);
+	});
 });
