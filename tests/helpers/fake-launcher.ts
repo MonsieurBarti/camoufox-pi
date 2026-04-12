@@ -56,35 +56,36 @@ export function makeFakeLauncher(
 	const makePage = (): Page => {
 		controls.pagesOpened += 1;
 		let closed = false;
+		let currentUrl = "";
 		const page = {
 			async goto(
 				url: string,
 				_options?: { timeout?: number; waitUntil?: string },
 			): Promise<Response | null> {
 				const behavior = pageBehavior(url);
-				if (opts.launchFails) throw opts.launchFails;
 				if (behavior.gotoDelayMs && behavior.gotoDelayMs > 0) {
 					await new Promise((resolve) => setTimeout(resolve, behavior.gotoDelayMs));
 				}
 				if (behavior.gotoError) throw behavior.gotoError;
 				if (behavior.nullResponse) return null;
+				currentUrl = behavior.finalUrl ?? url;
 				return {
 					status: () => behavior.status ?? 200,
 					url: () => behavior.finalUrl ?? url,
 				} as unknown as Response;
 			},
 			async content(): Promise<string> {
-				const behavior = pageBehavior("");
+				const behavior = pageBehavior(currentUrl);
 				return behavior.html ?? "<html></html>";
 			},
 			url(): string {
-				return "";
+				return currentUrl;
 			},
 			async $$eval<T>(
 				selector: string,
 				_evaluator: (els: unknown[], ...args: unknown[]) => T,
 			): Promise<T> {
-				const behavior = pageBehavior("");
+				const behavior = pageBehavior(currentUrl);
 				const results = behavior.evalResults;
 				if (results && selector in results) {
 					return results[selector] as T;
