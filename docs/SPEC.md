@@ -70,6 +70,7 @@ tff-search_web({
   max_results?: number,                                  // 1–50, default 10, clamped
   extract_selector?: string,                             // optional CSS selector to scope extraction
   timeout_ms?: number,                                   // per-call override
+  isolate?: boolean,                                     // fresh context, no cookie reuse
 })
 ```
 
@@ -83,11 +84,13 @@ Stealth unlocks Google as the default — Lightpanda is stuck on DuckDuckGo Lite
   bibliography_markdown: string,          // pre-formatted for RESEARCH.md paste
   engine: string,
   query: string,
-  truncated: boolean,
+  atLimit: boolean,
   cached: boolean,
   timing: { total_ms: number; nav_ms: number; parse_ms: number },
 }
 ```
+
+`atLimit` means `results.length === max_results`, which may or may not mean the engine had more; no ground-truth "has_more" signal is available from HTML SERPs.
 
 ### 3.2 `tff-fetch_url`
 
@@ -100,8 +103,22 @@ tff-fetch_url({
   render_mode?: "static" | "js",              // js = wait for document.readyState === "complete"
   wait_for_selector?: string,                 // wait for this selector before extracting
   timeout_ms?: number,
+  max_bytes?: number,                         // 1 KB to 50 MB, default 2 MB; UTF-8-safe truncation
   isolate?: boolean,                          // use fresh context, no cookie reuse
 })
+```
+
+**Output**
+
+```typescript
+{
+  url: string,
+  finalUrl: string,
+  status: number,
+  html: string,                               // or markdown/text per format
+  bytes: number,
+  truncated: boolean,                         // true when response exceeded max_bytes
+}
 ```
 
 ### 3.3 Slash commands
@@ -383,6 +400,9 @@ Document these prominently in the README and in the tool's prompt guidelines so 
 - **Firefox-identity.** Camoufox cannot mimic a Chromium UA convincingly (SpiderMonkey engine behavior is detectable). Anything requiring `window.chrome` / Client Hints / Chrome-specific APIs will fail. This is by design.
 - **Memory.** 200–1300 MB RSS per session is the price of stealth. Don't run multiple parallel `CamoufoxClient` instances on small hosts — reuse the singleton.
 - **Node support is third-party.** Upstream Camoufox officially supports only the Python wrapper. Node integration uses `camoufox-js` (Apify, MPL-2.0). Launcher isolation (`src/client/launcher.ts` is the only importer) keeps the dependency swappable; if `camoufox-js` stalls, replacement requires only a new `Launcher` implementation.
+- **Scheme allow-list.** URL fetch is limited to `http`/`https` schemes by default via the `uri` format allow-list. `file://`, `javascript:`, `data:`, `chrome://` and similar are rejected at the tool boundary. No opt-out in v1.
+- **SSRF protection.** Rejects targets that resolve to private IP ranges (127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16 (link-local + cloud metadata), 100.64.0.0/10 CGNAT, IPv6 ::1, fc00::/7, fe80::/10). Applied pre-navigation. No opt-out in v1.
+- **Response size cap.** Bodies are capped via `maxBytes` (default 2 MB); oversized bodies are truncated at a UTF-8-safe byte boundary and flagged with `truncated: true`.
 
 ## 18. Alternatives Considered
 
