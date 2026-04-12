@@ -52,7 +52,7 @@ export interface CamoufoxClientOptions {
 export class CamoufoxClient {
 	readonly events: CamoufoxEventEmitter = createEventEmitter();
 	private readonly launcher: Launcher;
-	private readonly config: CamoufoxConfig;
+	readonly config: CamoufoxConfig;
 	private readonly ssrfLookup: LookupFn | undefined;
 	private state: ReadyState = { status: "idle" };
 
