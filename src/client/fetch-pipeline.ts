@@ -125,3 +125,33 @@ export async function waitForSelectorOrThrow(
 		});
 	}
 }
+
+export interface ScreenshotOpts {
+	fullPage?: boolean;
+	format?: "png" | "jpeg";
+	quality?: number;
+}
+
+export interface ScreenshotResult {
+	data: string;
+	bytes: number;
+	mimeType: "image/png" | "image/jpeg";
+}
+
+export async function capturePageScreenshot(
+	page: Page,
+	opts: ScreenshotOpts,
+): Promise<ScreenshotResult> {
+	const type: "png" | "jpeg" = opts.format ?? "png";
+	const pwOpts: { fullPage?: boolean; type: "png" | "jpeg"; quality?: number } = {
+		type,
+	};
+	if (opts.fullPage) pwOpts.fullPage = true;
+	if (type === "jpeg" && opts.quality !== undefined) pwOpts.quality = opts.quality;
+	const buf = await page.screenshot(pwOpts);
+	return {
+		data: buf.toString("base64"),
+		bytes: buf.byteLength,
+		mimeType: type === "png" ? "image/png" : "image/jpeg",
+	};
+}
