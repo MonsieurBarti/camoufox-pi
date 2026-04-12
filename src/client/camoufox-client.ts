@@ -52,6 +52,12 @@ export class CamoufoxClient {
 		return this.state.status === "ready" && this.state.browser?.isConnected() === true;
 	}
 
+	private emitError(spanId: string, op: ErrorEvent["op"], err: unknown): void {
+		if (err instanceof CamoufoxErrorBox) {
+			this.events.emit("error", { spanId, op, error: err.err });
+		}
+	}
+
 	async ensureReady(signal?: AbortSignal): Promise<void> {
 		if (this.state.status === "ready") return;
 		if (this.state.status === "failed" && this.state.error) throw this.state.error;
@@ -83,71 +89,95 @@ export class CamoufoxClient {
 		bytes: number;
 		truncated: boolean;
 	}> {
-		await this.ensureReady(opts.signal);
-		if (
-			opts.timeoutMs !== undefined &&
-			(!Number.isInteger(opts.timeoutMs) || opts.timeoutMs < 1_000 || opts.timeoutMs > 120_000)
-		) {
-			throw new CamoufoxErrorBox({
-				type: "config_invalid",
-				field: "timeoutMs",
-				reason: `must be integer in [1000, 120000], got ${opts.timeoutMs}`,
-			});
-		}
-		if (
-			opts.maxBytes !== undefined &&
-			(!Number.isInteger(opts.maxBytes) || opts.maxBytes < 1_024 || opts.maxBytes > 52_428_800)
-		) {
-			throw new CamoufoxErrorBox({
-				type: "config_invalid",
-				field: "maxBytes",
-				reason: `must be integer in [1024, 52428800], got ${opts.maxBytes}`,
-			});
-		}
+		const spanId = newSpanId();
+		const started = Date.now();
 		try {
-			await assertSafeTarget(url, this.ssrfLookup ? { lookup: this.ssrfLookup } : {});
-		} catch (err) {
-			throw new CamoufoxErrorBox({
-				type: "config_invalid",
-				field: "url",
-				reason: err instanceof Error ? err.message : String(err),
-			});
-		}
-		const navOpts: {
-			signal: AbortSignal;
-			timeoutMs: number;
-			waitUntil: "load" | "domcontentloaded" | "networkidle";
-			isolate?: boolean;
-		} = {
-			signal: opts.signal,
-			timeoutMs: opts.timeoutMs ?? this.config.timeoutMs,
-			waitUntil: "load",
-		};
-		if (opts.isolate !== undefined) navOpts.isolate = opts.isolate;
-		const { page, response, cleanup } = await this.navigate(url, navOpts);
-		try {
-			const rawHtml = await page.content();
-			const maxBytes = opts.maxBytes ?? this.config.maxBytes;
-			const rawBytes = Buffer.byteLength(rawHtml, "utf8");
-			let html = rawHtml;
-			let bytes = rawBytes;
-			let truncated = false;
-			if (rawBytes > maxBytes) {
-				const buf = Buffer.from(rawHtml, "utf8");
-				html = buf.subarray(0, maxBytes).toString("utf8");
-				bytes = Buffer.byteLength(html, "utf8");
-				truncated = true;
+			await this.ensureReady(opts.signal);
+			if (
+				opts.timeoutMs !== undefined &&
+				(!Number.isInteger(opts.timeoutMs) || opts.timeoutMs < 1_000 || opts.timeoutMs > 120_000)
+			) {
+				throw new CamoufoxErrorBox({
+					type: "config_invalid",
+					field: "timeoutMs",
+					reason: `must be integer in [1000, 120000], got ${opts.timeoutMs}`,
+				});
 			}
-			return { html, status: response.status(), finalUrl: response.url(), bytes, truncated };
-		} catch (err) {
-			if (opts.signal.aborted) {
-				throw new CamoufoxErrorBox({ type: "aborted" });
+			if (
+				opts.maxBytes !== undefined &&
+				(!Number.isInteger(opts.maxBytes) || opts.maxBytes < 1_024 || opts.maxBytes > 52_428_800)
+			) {
+				throw new CamoufoxErrorBox({
+					type: "config_invalid",
+					field: "maxBytes",
+					reason: `must be integer in [1024, 52428800], got ${opts.maxBytes}`,
+				});
 			}
-			if (err instanceof CamoufoxErrorBox) throw err;
+			try {
+				await assertSafeTarget(url, this.ssrfLookup ? { lookup: this.ssrfLookup } : {});
+			} catch (err) {
+				throw new CamoufoxErrorBox({
+					type: "config_invalid",
+					field: "url",
+					reason: err instanceof Error ? err.message : String(err),
+				});
+			}
+			const navOpts: {
+				signal: AbortSignal;
+				timeoutMs: number;
+				waitUntil: "load" | "domcontentloaded" | "networkidle";
+				isolate?: boolean;
+			} = {
+				signal: opts.signal,
+				timeoutMs: opts.timeoutMs ?? this.config.timeoutMs,
+				waitUntil: "load",
+			};
+			if (opts.isolate !== undefined) navOpts.isolate = opts.isolate;
+			const { page, response, cleanup } = await this.navigate(url, navOpts);
+			try {
+				const rawHtml = await page.content();
+				const maxBytes = opts.maxBytes ?? this.config.maxBytes;
+				const rawBytes = Buffer.byteLength(rawHtml, "utf8");
+				let html = rawHtml;
+				let bytes = rawBytes;
+				let truncated = false;
+				if (rawBytes > maxBytes) {
+					const buf = Buffer.from(rawHtml, "utf8");
+					html = buf.subarray(0, maxBytes).toString("utf8");
+					bytes = Buffer.byteLength(html, "utf8");
+					truncated = true;
+				}
+				const result = {
+					html,
+					status: response.status(),
+					finalUrl: response.url(),
+					bytes,
+					truncated,
+				};
+				this.events.emit("fetch_url", {
+					spanId,
+					url,
+					finalUrl: result.finalUrl,
+					status: result.status,
+					bytes: result.bytes,
+					truncated: result.truncated,
+					isolate: opts.isolate ?? false,
+					durationMs: Date.now() - started,
+				});
+				return result;
+			} catch (err) {
+				if (opts.signal.aborted) {
+					throw new CamoufoxErrorBox({ type: "aborted" });
+				}
+				if (err instanceof CamoufoxErrorBox) throw err;
+				throw err;
+			} finally {
+				cleanup();
+				await page.close().catch(() => undefined);
+			}
+		} catch (err) {
+			this.emitError(spanId, "fetchUrl", err);
 			throw err;
-		} finally {
-			cleanup();
-			await page.close().catch(() => undefined);
 		}
 	}
 
@@ -160,51 +190,67 @@ export class CamoufoxClient {
 			isolate?: boolean;
 		},
 	): Promise<{ results: RawResult[]; engine: "duckduckgo"; query: string }> {
-		await this.ensureReady(opts.signal);
-		const maxResults = opts.maxResults ?? 10;
-		if (!Number.isInteger(maxResults) || maxResults < 1 || maxResults > 50) {
-			throw new CamoufoxErrorBox({
-				type: "config_invalid",
-				field: "maxResults",
-				reason: `must be integer in [1, 50], got ${maxResults}`,
-			});
-		}
-		if (
-			opts.timeoutMs !== undefined &&
-			(!Number.isInteger(opts.timeoutMs) || opts.timeoutMs < 1_000 || opts.timeoutMs > 120_000)
-		) {
-			throw new CamoufoxErrorBox({
-				type: "config_invalid",
-				field: "timeoutMs",
-				reason: `must be integer in [1000, 120000], got ${opts.timeoutMs}`,
-			});
-		}
-		const adapter = duckduckgoAdapter;
-		const url = adapter.buildUrl(query);
-		const navOpts: {
-			signal: AbortSignal;
-			timeoutMs: number;
-			waitUntil: "load" | "domcontentloaded" | "networkidle";
-			isolate?: boolean;
-		} = {
-			signal: opts.signal,
-			timeoutMs: opts.timeoutMs ?? this.config.timeoutMs,
-			waitUntil: adapter.waitStrategy.readyState,
-		};
-		if (opts.isolate !== undefined) navOpts.isolate = opts.isolate;
-		const { page, cleanup } = await this.navigate(url, navOpts);
+		const spanId = newSpanId();
+		const started = Date.now();
 		try {
-			const results = await adapter.parseResults(page, maxResults);
-			return { results, engine: "duckduckgo", query };
-		} catch (err) {
-			if (opts.signal.aborted) {
-				throw new CamoufoxErrorBox({ type: "aborted" });
+			await this.ensureReady(opts.signal);
+			const maxResults = opts.maxResults ?? 10;
+			if (!Number.isInteger(maxResults) || maxResults < 1 || maxResults > 50) {
+				throw new CamoufoxErrorBox({
+					type: "config_invalid",
+					field: "maxResults",
+					reason: `must be integer in [1, 50], got ${maxResults}`,
+				});
 			}
-			if (err instanceof CamoufoxErrorBox) throw err;
+			if (
+				opts.timeoutMs !== undefined &&
+				(!Number.isInteger(opts.timeoutMs) || opts.timeoutMs < 1_000 || opts.timeoutMs > 120_000)
+			) {
+				throw new CamoufoxErrorBox({
+					type: "config_invalid",
+					field: "timeoutMs",
+					reason: `must be integer in [1000, 120000], got ${opts.timeoutMs}`,
+				});
+			}
+			const adapter = duckduckgoAdapter;
+			const url = adapter.buildUrl(query);
+			const navOpts: {
+				signal: AbortSignal;
+				timeoutMs: number;
+				waitUntil: "load" | "domcontentloaded" | "networkidle";
+				isolate?: boolean;
+			} = {
+				signal: opts.signal,
+				timeoutMs: opts.timeoutMs ?? this.config.timeoutMs,
+				waitUntil: adapter.waitStrategy.readyState,
+			};
+			if (opts.isolate !== undefined) navOpts.isolate = opts.isolate;
+			const { page, cleanup } = await this.navigate(url, navOpts);
+			try {
+				const results = await adapter.parseResults(page, maxResults);
+				this.events.emit("search", {
+					spanId,
+					engine: "duckduckgo",
+					query,
+					maxResults,
+					durationMs: Date.now() - started,
+					resultCount: results.length,
+					atLimit: results.length === maxResults,
+				});
+				return { results, engine: "duckduckgo", query };
+			} catch (err) {
+				if (opts.signal.aborted) {
+					throw new CamoufoxErrorBox({ type: "aborted" });
+				}
+				if (err instanceof CamoufoxErrorBox) throw err;
+				throw err;
+			} finally {
+				cleanup();
+				await page.close().catch(() => undefined);
+			}
+		} catch (err) {
+			this.emitError(spanId, "search", err);
 			throw err;
-		} finally {
-			cleanup();
-			await page.close().catch(() => undefined);
 		}
 	}
 
