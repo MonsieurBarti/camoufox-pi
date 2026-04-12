@@ -72,6 +72,17 @@ export class CamoufoxService {
 		this.client = createClient(createOpts);
 	}
 
+	/**
+	 * Wire this service into a PI extension host.
+	 *
+	 * IMPORTANT: `attach(pi)` must be called SYNCHRONOUSLY after
+	 * `new CamoufoxService(...)`. The constructor fires `ensureReady()` in
+	 * the background, which can emit `binary_download_progress` events
+	 * before listeners are registered. `src/index.ts` calls `attach(pi)`
+	 * immediately after construction, so the race window is sub-millisecond
+	 * in practice. Any caller that defers `attach()` past a microtask boundary
+	 * risks dropping early progress events.
+	 */
 	attach(pi: PiAttachable): void {
 		const EVENT_NAMES: Array<keyof CamoufoxEvents> = [
 			"search",
