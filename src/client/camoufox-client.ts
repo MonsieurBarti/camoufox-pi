@@ -77,11 +77,21 @@ export class CamoufoxClient {
 	private async doLaunch(): Promise<void> {
 		try {
 			const { browser, context, version } = await this.launcher.launch();
+			// If close() was called while we were launching, tear down the fresh
+			// browser instead of resurrecting into ready. Leaves state as "closed".
+			if (this.state.status !== "launching") {
+				await browser.close().catch(() => undefined);
+				return;
+			}
 			this.state = { status: "ready", browser, context, version };
 		} catch (err) {
 			const stderr = err instanceof Error ? err.message : String(err);
 			const boxed = new CamoufoxErrorBox({ type: "browser_launch_failed", stderr });
-			this.state = { status: "failed", error: boxed };
+			// If close() was called during the failed launch, keep the closed state
+			// (don't overwrite it with failed — closed is terminal).
+			if (this.state.status === "launching") {
+				this.state = { status: "failed", error: boxed };
+			}
 			throw boxed;
 		}
 	}

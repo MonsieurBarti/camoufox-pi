@@ -74,4 +74,19 @@ describe("CamoufoxClient lifecycle", () => {
 		ctrl.abort();
 		await expect(p).rejects.toMatchObject({ err: { type: "aborted" } });
 	});
+
+	it("close() during launching closes the freshly-launched browser", async () => {
+		const launcher = makeFakeLauncher({ launchDelayMs: 30 });
+		const client = new CamoufoxClient({ launcher });
+		const readyPromise = client.ensureReady();
+		await client.close();
+		// ensureReady will resolve since close() did not abort it, but the state
+		// stays "closed" and the freshly-launched browser is cleaned up.
+		await readyPromise.catch(() => undefined);
+		expect(client.isAlive()).toBe(false);
+		// launchCount is 1 (the one we started). The fresh browser's close
+		// registered on fake controls via browser.close() → controls.connected = false.
+		expect(launcher.fake.launchCount).toBe(1);
+		expect(launcher.fake.connected).toBe(false);
+	});
 });
