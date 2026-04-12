@@ -3,7 +3,10 @@
 // reads as a recipe and htmlToMarkdown can be tested without a browser.
 // Spec: docs/superpowers/specs/2026-04-13-fetch-url-features-design.md §3.1.
 
+import type { Page } from "playwright-core";
 import TurndownService from "turndown";
+
+import { CamoufoxErrorBox } from "../errors.js";
 
 export type RenderMode = "static" | "render" | "render-and-wait";
 export type Format = "html" | "markdown";
@@ -62,4 +65,33 @@ export function htmlToMarkdown(html: string, baseUrl: string): string {
 		// client layer wraps this in config_invalid if empty isn't acceptable.
 		return cleaned;
 	}
+}
+
+export async function extractSlice(
+	page: Page,
+	selector: string | undefined,
+): Promise<{ html: string }> {
+	if (selector === undefined) {
+		return { html: await page.content() };
+	}
+	const loc = page.locator(selector).first();
+	let count: number;
+	try {
+		count = await loc.count();
+	} catch (err) {
+		throw new CamoufoxErrorBox({
+			type: "config_invalid",
+			field: "selector",
+			reason: err instanceof Error ? err.message : String(err),
+		});
+	}
+	if (count === 0) {
+		throw new CamoufoxErrorBox({
+			type: "config_invalid",
+			field: "selector",
+			reason: "no element matched",
+		});
+	}
+	const outerHTML = await loc.evaluate((el: { outerHTML: string }) => el.outerHTML);
+	return { html: outerHTML };
 }
