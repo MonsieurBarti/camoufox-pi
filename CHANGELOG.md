@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.1.2](https://github.com/MonsieurBarti/camoufox-pi/compare/camoufox-pi-v0.1.1...camoufox-pi-v0.1.2) (2026-04-12)
+
+
+### Features
+
+* **client:** add checkhealth probe mode ([76ac81d](https://github.com/MonsieurBarti/camoufox-pi/commit/76ac81dccc7ec626fc293afe60a1a449d2304eaa))
+* **client:** add checkhealth snapshot mode ([77d1aa0](https://github.com/MonsieurBarti/camoufox-pi/commit/77d1aa0286ffa4d83b6c1256d967f28c951de6dd))
+* **client:** add createclient factory with lazy launch ([1d86e0e](https://github.com/MonsieurBarti/camoufox-pi/commit/1d86e0ebcb5d6c41f5c44885d46d03d53fed63d1))
+* **client:** add typed event emitter and span-id helper ([458bec5](https://github.com/MonsieurBarti/camoufox-pi/commit/458bec5c286ac74f6a835cb3cfcd6131cfb66a2b))
+* **client:** emit browser_launch and binary_download_progress events ([29d39b5](https://github.com/MonsieurBarti/camoufox-pi/commit/29d39b5dd78bf01dcb18d23e6bb0f26a395f98c6))
+* **client:** emit fetch_url, search, and error events on op paths ([b050f2c](https://github.com/MonsieurBarti/camoufox-pi/commit/b050f2c94cda4f38c464e02df48f793fa29b4909))
+* **client:** thread onprogress callback through launcher interface ([f6fd4cf](https://github.com/MonsieurBarti/camoufox-pi/commit/f6fd4cfba34f576fccbfd07ce2073760f03f3571))
+* public CamoufoxClient, events bus, checkHealth (milestone 2) ([f758055](https://github.com/MonsieurBarti/camoufox-pi/commit/f758055a40484398a3cca3fb44ed8cd3a35fe07b))
+
+
+### Bug Fixes
+
+* **client:** isolate async event listener rejections ([e9d523a](https://github.com/MonsieurBarti/camoufox-pi/commit/e9d523a785e8ac5b427b31af5a69304e3bc739d1))
+* **security:** ssrf-check search(), widen spanid, validate binary path ([5f92675](https://github.com/MonsieurBarti/camoufox-pi/commit/5f92675a7d9d42c88e063bf71db007382cfdb36d))
+
 ## [0.1.1](https://github.com/MonsieurBarti/camoufox-pi/compare/camoufox-pi-v0.1.0...camoufox-pi-v0.1.1) (2026-04-12)
 
 
