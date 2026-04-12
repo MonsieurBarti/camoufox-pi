@@ -10,7 +10,7 @@ export interface ElementStub {
 	getAttribute(name: string): string | null;
 }
 
-const RESULT_BLOCK_RE = /<div[^>]*class="[^"]*\bresult\b[^"]*"[^>]*>[\s\S]*?<\/div>\s*<\/div>/gi;
+const RESULT_BLOCK_SPLIT_RE = /(?=<div[^>]*class="[^"]*\bresult\b[^"]*"[^>]*>)/gi;
 const A_RE = /<a[^>]*class="[^"]*\bresult__a\b[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i;
 const SNIPPET_RE = /<a[^>]*class="[^"]*\bresult__snippet\b[^"]*"[^>]*>([\s\S]*?)<\/a>/i;
 
@@ -42,7 +42,7 @@ function decodeDdgRedirect(href: string): string {
 
 export function parseDuckDuckGoFixture(html: string, selector: string): ElementStub[] {
 	if (selector !== "div.result, div.web-result") return [];
-	const blocks = html.match(RESULT_BLOCK_RE) ?? [];
+	const blocks = html.split(RESULT_BLOCK_SPLIT_RE).filter((b) => A_RE.test(b));
 	const elements: ElementStub[] = [];
 	for (const block of blocks) {
 		const a = block.match(A_RE);
@@ -63,7 +63,11 @@ export function parseDuckDuckGoFixture(html: string, selector: string): ElementS
 						querySelector: () => null,
 					};
 				}
-				if (sel === "a.result__snippet" || sel === ".result__snippet") {
+				if (
+					sel === "a.result__snippet" ||
+					sel === ".result__snippet" ||
+					sel === "a.result__snippet, .result__snippet"
+				) {
 					return {
 						textContent: snippet,
 						getAttribute: () => null,

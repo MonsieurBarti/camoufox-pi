@@ -32,6 +32,8 @@ describe("duckduckgoAdapter.parseResults", () => {
 			expect(r.snippet).toBeTypeOf("string");
 			expect(r.rank).toBe(i + 1);
 		}
+		expect(results.length).toBeGreaterThanOrEqual(5);
+		expect(results.some((r) => r.snippet.length > 0)).toBe(true);
 	});
 
 	it("respects maxResults", async () => {
