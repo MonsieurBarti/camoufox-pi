@@ -108,4 +108,16 @@ describe("mapPlaywrightError", () => {
 			stderr: "string error",
 		});
 	});
+
+	it("returns timeout with phase: wait_for_selector", () => {
+		const err = Object.assign(new Error("Timeout 100ms"), { name: "TimeoutError" });
+		const mapped = mapPlaywrightError(err, { phase: "wait_for_selector", elapsedMs: 100 });
+		expect(mapped).toEqual({ type: "timeout", phase: "wait_for_selector", elapsedMs: 100 });
+	});
+
+	it("returns timeout with phase: screenshot", () => {
+		const err = Object.assign(new Error("Timeout 50ms"), { name: "TimeoutError" });
+		const mapped = mapPlaywrightError(err, { phase: "screenshot", elapsedMs: 50 });
+		expect(mapped).toEqual({ type: "timeout", phase: "screenshot", elapsedMs: 50 });
+	});
 });

@@ -24,6 +24,16 @@ export interface FakePageResponse {
 	 * Keyed by selector; value is whatever the evaluator returns.
 	 */
 	evalResults?: Record<string, unknown>;
+	/** Selector → outerHTML string (match) or null (no match). */
+	selectorMatchHtml?: Record<string, string | null>;
+	/** Wait-for-selector behavior. "resolve" → visible immediately; "never" → times out; Error → thrown. */
+	waitForSelectorBehavior?: "resolve" | "never" | Error;
+	/** Optional delay before waitForSelector resolves. */
+	waitForSelectorDelayMs?: number;
+	/** Bytes returned by page.screenshot(); pass an Error to throw. */
+	screenshotBytes?: Buffer | Error;
+	/** Value returned by page.evaluate() for the scroll-dimensions probe. */
+	documentDimensions?: { width: number; height: number };
 }
 
 export interface FakeControls {
@@ -33,6 +43,7 @@ export interface FakeControls {
 	contextsOpened: number;
 	contextsClosed: number;
 	connected: boolean;
+	lastGotoWaitUntil?: string;
 	setConnected(value: boolean): void;
 }
 
@@ -68,8 +79,9 @@ export function makeFakeLauncher(
 		const page = {
 			async goto(
 				url: string,
-				_options?: { timeout?: number; waitUntil?: string },
+				options?: { timeout?: number; waitUntil?: string },
 			): Promise<Response | null> {
+				if (options?.waitUntil) controls.lastGotoWaitUntil = options.waitUntil;
 				const behavior = pageBehavior(url);
 				if (behavior.gotoDelayMs && behavior.gotoDelayMs > 0) {
 					await new Promise((resolve) => setTimeout(resolve, behavior.gotoDelayMs));
@@ -120,6 +132,78 @@ export function makeFakeLauncher(
 					return evaluator(value as unknown[], ...args);
 				}
 				return [] as unknown as T;
+			},
+			async waitForSelector(
+				selector: string,
+				opts?: { state?: string; timeout?: number },
+			): Promise<void> {
+				const behavior = pageBehavior(currentUrl);
+				const b = behavior.waitForSelectorBehavior ?? "resolve";
+				if (b instanceof Error) throw b;
+				if (behavior.waitForSelectorDelayMs && behavior.waitForSelectorDelayMs > 0) {
+					await new Promise((resolve) => setTimeout(resolve, behavior.waitForSelectorDelayMs));
+				}
+				if (b === "never") {
+					const timeout = opts?.timeout ?? 30_000;
+					await new Promise((resolve) => setTimeout(resolve, timeout));
+					const err = new Error(`Timeout ${timeout}ms exceeded waiting for ${selector}`);
+					err.name = "TimeoutError";
+					throw err;
+				}
+				// b === "resolve" — no-op.
+				void selector;
+			},
+			locator(selector: string) {
+				const behavior = pageBehavior(currentUrl);
+				const match = behavior.selectorMatchHtml?.[selector];
+				const hasMatch = match !== undefined && match !== null;
+				const result = {
+					first() {
+						return {
+							async count(): Promise<number> {
+								return hasMatch ? 1 : 0;
+							},
+							async evaluate<T>(fn: (el: { outerHTML: string }) => T): Promise<T> {
+								if (!hasMatch) throw new Error("no element");
+								return fn({ outerHTML: match as string });
+							},
+							async waitFor(opts?: { state?: string; timeout?: number }): Promise<void> {
+								const b = behavior.waitForSelectorBehavior ?? "resolve";
+								if (b instanceof Error) throw b;
+								if (behavior.waitForSelectorDelayMs && behavior.waitForSelectorDelayMs > 0) {
+									await new Promise((r) => setTimeout(r, behavior.waitForSelectorDelayMs));
+								}
+								if (b === "never") {
+									const timeout = opts?.timeout ?? 30_000;
+									await new Promise((r) => setTimeout(r, timeout));
+									const err = new Error(`Timeout ${timeout}ms exceeded`);
+									err.name = "TimeoutError";
+									throw err;
+								}
+							},
+						};
+					},
+				};
+				return result;
+			},
+			async screenshot(opts?: {
+				fullPage?: boolean;
+				type?: "png" | "jpeg";
+				quality?: number;
+			}): Promise<Buffer> {
+				void opts;
+				const behavior = pageBehavior(currentUrl);
+				if (behavior.screenshotBytes instanceof Error) throw behavior.screenshotBytes;
+				return behavior.screenshotBytes ?? Buffer.from("fake-png");
+			},
+			async evaluate<T>(_fn: () => T): Promise<T> {
+				const behavior = pageBehavior(currentUrl);
+				// The only page.evaluate() call in production today is the
+				// scroll-dimensions probe for full_page screenshots. Return
+				// the configured dimensions (defaults to a small viewport)
+				// so the dimension cap passes in ordinary tests.
+				const dims = behavior.documentDimensions ?? { width: 1024, height: 768 };
+				return dims as unknown as T;
 			},
 			async close(): Promise<void> {
 				if (!closed) {

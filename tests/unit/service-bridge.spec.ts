@@ -99,6 +99,11 @@ describe("CamoufoxService.attach — event bridge", () => {
 			truncated: false,
 			isolate: false,
 			durationMs: 0,
+			renderMode: "render",
+			usedWaitForSelector: false,
+			usedSelector: false,
+			format: "html",
+			screenshotBytes: null,
 		});
 		expect(piEmit).not.toHaveBeenCalled();
 	});

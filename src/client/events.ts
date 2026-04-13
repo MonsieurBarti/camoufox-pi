@@ -22,6 +22,11 @@ export interface FetchUrlEvent {
 	readonly truncated: boolean;
 	readonly isolate: boolean;
 	readonly durationMs: number;
+	readonly renderMode: "static" | "render" | "render-and-wait";
+	readonly usedWaitForSelector: boolean;
+	readonly usedSelector: boolean;
+	readonly format: "html" | "markdown";
+	readonly screenshotBytes: number | null;
 }
 
 export interface BrowserLaunchEvent {

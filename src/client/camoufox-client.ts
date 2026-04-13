@@ -1,6 +1,6 @@
 import type { Browser, BrowserContext, Page } from "playwright-core";
 
-import { CamoufoxErrorBox, mapPlaywrightError } from "../errors.js";
+import { CamoufoxErrorBox, mapPlaywrightError, sanitizeReason } from "../errors.js";
 import { duckduckgoAdapter } from "../search/adapters/duckduckgo.js";
 import type { RawResult } from "../search/types.js";
 import { type LookupFn, assertSafeTarget } from "../security/ssrf.js";
@@ -14,6 +14,19 @@ import {
 	createEventEmitter,
 	newSpanId,
 } from "./events.js";
+import {
+	type Format,
+	type RenderMode,
+	SCREENSHOT_MAX_BYTES,
+	type ScreenshotOpts,
+	type ScreenshotResult,
+	capturePageScreenshot,
+	extractSlice,
+	htmlToMarkdown,
+	resolveWaitUntil,
+	validateFetchUrlOpts,
+	waitForSelectorOrThrow,
+} from "./fetch-pipeline.js";
 import type { Launcher } from "./launcher.js";
 import { combineSignals } from "./signal.js";
 
@@ -148,9 +161,16 @@ export class CamoufoxClient {
 			timeoutMs?: number;
 			maxBytes?: number;
 			isolate?: boolean;
+			renderMode?: RenderMode;
+			waitForSelector?: string;
+			selector?: string;
+			format?: Format;
+			screenshot?: ScreenshotOpts;
 		},
 	): Promise<{
 		html: string;
+		markdown?: string;
+		screenshot?: ScreenshotResult;
 		status: number;
 		finalUrl: string;
 		bytes: number;
@@ -160,33 +180,14 @@ export class CamoufoxClient {
 		const started = Date.now();
 		try {
 			await this.ensureReady(opts.signal);
-			if (
-				opts.timeoutMs !== undefined &&
-				(!Number.isInteger(opts.timeoutMs) || opts.timeoutMs < 1_000 || opts.timeoutMs > 120_000)
-			) {
-				throw new CamoufoxErrorBox({
-					type: "config_invalid",
-					field: "timeoutMs",
-					reason: `must be integer in [1000, 120000], got ${opts.timeoutMs}`,
-				});
-			}
-			if (
-				opts.maxBytes !== undefined &&
-				(!Number.isInteger(opts.maxBytes) || opts.maxBytes < 1_024 || opts.maxBytes > 52_428_800)
-			) {
-				throw new CamoufoxErrorBox({
-					type: "config_invalid",
-					field: "maxBytes",
-					reason: `must be integer in [1024, 52428800], got ${opts.maxBytes}`,
-				});
-			}
+			const { renderMode, format } = validateFetchUrlOpts(opts);
 			try {
 				await assertSafeTarget(url, this.ssrfLookup ? { lookup: this.ssrfLookup } : {});
 			} catch (err) {
 				throw new CamoufoxErrorBox({
 					type: "config_invalid",
 					field: "url",
-					reason: err instanceof Error ? err.message : String(err),
+					reason: sanitizeReason(err instanceof Error ? err.message : String(err)),
 				});
 			}
 			const navOpts: {
@@ -197,30 +198,81 @@ export class CamoufoxClient {
 			} = {
 				signal: opts.signal,
 				timeoutMs: opts.timeoutMs ?? this.config.timeoutMs,
-				waitUntil: "load",
+				waitUntil: resolveWaitUntil(renderMode),
 			};
 			if (opts.isolate !== undefined) navOpts.isolate = opts.isolate;
 			const { page, response, cleanup } = await this.navigate(url, navOpts);
+			let currentPhase: "nav" | "wait_for_selector" | "screenshot" | "extract" = "nav";
 			try {
-				const rawHtml = await page.content();
+				if (opts.waitForSelector !== undefined) {
+					currentPhase = "wait_for_selector";
+					const remaining = Math.max(
+						0,
+						(opts.timeoutMs ?? this.config.timeoutMs) - (Date.now() - started),
+					);
+					await waitForSelectorOrThrow(page, opts.waitForSelector, remaining);
+				}
+				let screenshotResult: ScreenshotResult | undefined;
+				if (opts.screenshot !== undefined) {
+					currentPhase = "screenshot";
+					screenshotResult = await capturePageScreenshot(page, opts.screenshot);
+					if (screenshotResult.bytes > SCREENSHOT_MAX_BYTES) {
+						throw new CamoufoxErrorBox({
+							type: "config_invalid",
+							field: "screenshot",
+							reason: `exceeds 10 MiB cap (got ${screenshotResult.bytes} bytes)`,
+						});
+					}
+				}
+				currentPhase = "extract";
+				const { html: rawHtml } = await extractSlice(page, opts.selector);
+				const finalUrl = response.url();
+				let body: string;
+				if (format === "markdown") {
+					try {
+						body = htmlToMarkdown(rawHtml, finalUrl);
+					} catch (err) {
+						throw new CamoufoxErrorBox({
+							type: "config_invalid",
+							field: "markdown",
+							reason: sanitizeReason(
+								`markdown conversion failed: ${err instanceof Error ? err.message : String(err)}`,
+							),
+						});
+					}
+				} else {
+					body = rawHtml;
+				}
+
 				const maxBytes = opts.maxBytes ?? this.config.maxBytes;
-				const rawBytes = Buffer.byteLength(rawHtml, "utf8");
-				let html = rawHtml;
+				const rawBytes = Buffer.byteLength(body, "utf8");
+				let cappedBody = body;
 				let bytes = rawBytes;
 				let truncated = false;
 				if (rawBytes > maxBytes) {
-					const buf = Buffer.from(rawHtml, "utf8");
-					html = buf.subarray(0, maxBytes).toString("utf8");
-					bytes = Buffer.byteLength(html, "utf8");
+					const buf = Buffer.from(body, "utf8");
+					cappedBody = buf.subarray(0, maxBytes).toString("utf8");
+					bytes = Buffer.byteLength(cappedBody, "utf8");
 					truncated = true;
 				}
-				const result = {
-					html,
+
+				const result: {
+					html: string;
+					markdown?: string;
+					screenshot?: ScreenshotResult;
+					status: number;
+					finalUrl: string;
+					bytes: number;
+					truncated: boolean;
+				} = {
+					html: format === "html" ? cappedBody : rawHtml,
 					status: response.status(),
-					finalUrl: response.url(),
+					finalUrl,
 					bytes,
 					truncated,
 				};
+				if (format === "markdown") result.markdown = cappedBody;
+				if (screenshotResult) result.screenshot = screenshotResult;
 				this.events.emit("fetch_url", {
 					spanId,
 					url,
@@ -230,6 +282,11 @@ export class CamoufoxClient {
 					truncated: result.truncated,
 					isolate: opts.isolate ?? false,
 					durationMs: Date.now() - started,
+					renderMode,
+					usedWaitForSelector: opts.waitForSelector !== undefined,
+					usedSelector: opts.selector !== undefined,
+					format,
+					screenshotBytes: screenshotResult?.bytes ?? null,
 				});
 				return result;
 			} catch (err) {
@@ -237,7 +294,13 @@ export class CamoufoxClient {
 					throw new CamoufoxErrorBox({ type: "aborted" });
 				}
 				if (err instanceof CamoufoxErrorBox) throw err;
-				throw err;
+				const mapped = mapPlaywrightError(err, {
+					url: response.url(),
+					phase: currentPhase,
+					elapsedMs: Date.now() - started,
+					signal: opts.signal,
+				});
+				throw new CamoufoxErrorBox(mapped);
 			} finally {
 				cleanup();
 				await page.close().catch(() => undefined);

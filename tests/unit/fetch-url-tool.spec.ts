@@ -178,3 +178,86 @@ describe("tff-fetch_url tool", () => {
 		await client.close();
 	});
 });
+
+describe("tff-fetch_url tool — new features", () => {
+	it("drops html from details when format: markdown", async () => {
+		const launcher = makeFakeLauncher({
+			pageBehavior: () => ({
+				status: 200,
+				html: "<html><body><h1>Hi</h1></body></html>",
+				finalUrl: "https://ok.test/",
+			}),
+		});
+		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
+		const tool = createFetchUrlTool(client);
+		const res = await tool.execute(
+			"id",
+			{ url: "https://ok.test/", format: "markdown" },
+			new AbortController().signal,
+		);
+		expect(res.details.html).toBeUndefined();
+		expect(res.details.markdown).toBeDefined();
+		expect(res.details.format).toBe("markdown");
+		await client.close();
+	});
+
+	it("keeps html in details when format: html (default)", async () => {
+		const launcher = makeFakeLauncher({
+			pageBehavior: () => ({
+				status: 200,
+				html: "<html><body><p>hi</p></body></html>",
+				finalUrl: "https://ok.test/",
+			}),
+		});
+		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
+		const tool = createFetchUrlTool(client);
+		const res = await tool.execute("id", { url: "https://ok.test/" }, new AbortController().signal);
+		expect(res.details.html).toBeDefined();
+		expect(res.details.markdown).toBeUndefined();
+		await client.close();
+	});
+
+	it("propagates screenshot to details.screenshot with encoding metadata", async () => {
+		const launcher = makeFakeLauncher({
+			pageBehavior: () => ({
+				status: 200,
+				html: "<html></html>",
+				finalUrl: "https://ok.test/",
+				screenshotBytes: Buffer.from([1, 2, 3]),
+			}),
+		});
+		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
+		const tool = createFetchUrlTool(client);
+		const res = await tool.execute(
+			"id",
+			{ url: "https://ok.test/", screenshot: {} },
+			new AbortController().signal,
+		);
+		expect(res.details.screenshot).toMatchObject({
+			encoding: "base64",
+			mimeType: "image/png",
+			bytes: 3,
+		});
+		await client.close();
+	});
+
+	it("includes renderMode, usedWaitForSelector, usedSelector, format in details always", async () => {
+		const launcher = makeFakeLauncher({
+			pageBehavior: () => ({
+				status: 200,
+				html: "<html></html>",
+				finalUrl: "https://ok.test/",
+			}),
+		});
+		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
+		const tool = createFetchUrlTool(client);
+		const res = await tool.execute("id", { url: "https://ok.test/" }, new AbortController().signal);
+		expect(res.details).toMatchObject({
+			renderMode: "render",
+			usedWaitForSelector: false,
+			usedSelector: false,
+			format: "html",
+		});
+		await client.close();
+	});
+});

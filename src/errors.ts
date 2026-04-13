@@ -1,14 +1,32 @@
 // Single seam for turning Playwright / camoufox-js exceptions into typed
 // CamoufoxError values. Spec: §4.2, §5.1.
 
+export type TimeoutPhase = "nav" | "wait_ready" | "wait_for_selector" | "screenshot" | "extract";
+
 export type CamoufoxError =
-	| { type: "timeout"; phase: "nav" | "wait_ready"; elapsedMs: number }
+	| {
+			type: "timeout";
+			phase: TimeoutPhase;
+			elapsedMs: number;
+	  }
 	| { type: "network"; cause: string; url: string }
 	| { type: "http"; status: number; url: string }
 	| { type: "browser_launch_failed"; stderr: string }
 	| { type: "playwright_disconnected" }
 	| { type: "aborted" }
 	| { type: "config_invalid"; field: string; reason: string };
+
+// Strip absolute/file-URL paths and truncate before embedding third-party
+// exception messages in config_invalid.reason. Prevents leaking node_modules
+// paths or user file paths into logs / error responses.
+export function sanitizeReason(msg: string, maxChars = 200): string {
+	let out = msg;
+	out = out.replace(/file:\/\/[^\s)]+/g, "[file]");
+	out = out.replace(/(?<![\w@])\/(?:[A-Za-z0-9_.+-]+\/)+[A-Za-z0-9_.+-]+/g, "[path]");
+	out = out.replace(/[A-Za-z]:\\(?:[^\\\s]+\\)+[^\\\s]+/g, "[path]");
+	if (out.length > maxChars) out = `${out.slice(0, maxChars)}…`;
+	return out;
+}
 
 function sanitizeForMessage(err: CamoufoxError): string {
 	// Cap stderr and redact URL query strings from error payloads before
@@ -44,7 +62,7 @@ export class CamoufoxErrorBox extends Error {
 
 export interface MapContext {
 	readonly url?: string;
-	readonly phase?: "nav" | "wait_ready";
+	readonly phase?: TimeoutPhase;
 	readonly elapsedMs?: number;
 	readonly signal?: AbortSignal;
 }
