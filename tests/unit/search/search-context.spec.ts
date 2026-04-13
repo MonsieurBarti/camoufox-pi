@@ -122,6 +122,18 @@ describe("createSearchContext", () => {
 		expect(fake.state.contextsCreated).toBe(2);
 	});
 
+	it("concurrent acquirePage calls do not double-create the BrowserContext", async () => {
+		const fake = makeFakeBrowser();
+		const ctx = createSearchContext(() => fake.browser);
+		const [a, b, c] = await Promise.all([ctx.acquirePage(), ctx.acquirePage(), ctx.acquirePage()]);
+		expect(fake.state.contextsCreated).toBe(1);
+		expect(fake.state.pagesCreated).toBe(3);
+		// Make sure all returned valid pages.
+		expect(a.page).toBeTruthy();
+		expect(b.page).toBeTruthy();
+		expect(c.page).toBeTruthy();
+	});
+
 	it("attaches an SSRF guard on each acquirePage (returns guard)", async () => {
 		const fake = makeFakeBrowser();
 		const ctx = createSearchContext(() => fake.browser);

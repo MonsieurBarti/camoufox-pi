@@ -27,19 +27,26 @@ export function createSearchContext(
 	opts: { ssrfLookup?: LookupFn } = {},
 ): SearchContext {
 	let context: BrowserContext | null = null;
+	let initPromise: Promise<BrowserContext> | null = null;
 	let queries = 0;
 	let blockedFlag = false;
 
-	const ensureContext = async (): Promise<BrowserContext> => {
-		if (context !== null) return context;
+	const ensureContext = (): Promise<BrowserContext> => {
+		if (context !== null) return Promise.resolve(context);
+		if (initPromise !== null) return initPromise;
 		const browser = getBrowser();
-		context = await browser.newContext();
-		return context;
+		initPromise = browser.newContext().then((ctx) => {
+			context = ctx;
+			initPromise = null;
+			return ctx;
+		});
+		return initPromise;
 	};
 
 	const doRecycle = async (): Promise<void> => {
 		const ctx = context;
 		context = null;
+		initPromise = null;
 		queries = 0;
 		blockedFlag = false;
 		if (ctx) await ctx.close().catch(() => undefined);
