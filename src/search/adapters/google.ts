@@ -1,8 +1,10 @@
-import type { Page } from "playwright-core";
+import type { Page, Response } from "playwright-core";
 
-import type { RawResult, SearchEngineAdapter } from "../types.js";
+import type { BlockSignal, RawResult, SearchEngineAdapter } from "../types.js";
 
 const CONSENT_HOST_RE = /(?:^|\.)consent\.google\.com$/i;
+
+const SORRY_URL_RE = /\/sorry\//;
 
 const REJECT_SELECTORS = [
 	'button[jsname="tWT92d"]',
@@ -75,6 +77,20 @@ async function parseResults(page: Page, maxResults: number): Promise<RawResult[]
 	return raw.map((r, i) => ({ ...r, rank: i + 1 }));
 }
 
+async function detectBlock(page: Page, response: Response | null): Promise<BlockSignal | null> {
+	if (response) {
+		const status = response.status();
+		if (status === 429 || status === 503) {
+			return { kind: "http_status", status };
+		}
+	}
+	const url = page.url();
+	if (SORRY_URL_RE.test(url)) {
+		return { kind: "sorry_interstitial", url };
+	}
+	return null;
+}
+
 export const googleAdapter: SearchEngineAdapter = {
 	name: "google",
 	buildUrl(query: string): string {
@@ -83,4 +99,5 @@ export const googleAdapter: SearchEngineAdapter = {
 	waitStrategy: { readyState: "domcontentloaded" },
 	parseResults,
 	dismissConsent,
+	detectBlock,
 };
