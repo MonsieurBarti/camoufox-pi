@@ -13,6 +13,27 @@
 - Popup coverage: `page.on("popup", …)` listener attaches the guard to `window.open` / `target="_blank"` pages so they cannot evade the parent's per-page route handler.
 - Resolved internal IPs scrubbed from the `reason` string — prevents topology disclosure via caller-visible errors.
 
+## [0.2.0](https://github.com/MonsieurBarti/camoufox-pi/compare/camoufox-pi-v0.1.3...camoufox-pi-v0.2.0) (2026-04-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* **client:** migrate initial-url ssrf error to ssrf_blocked { hop: initial }
+
+### Features
+
+* **client:** attach ssrf guard in navigate and surface ssrf_blocked on goto reject ([8b8a052](https://github.com/MonsieurBarti/camoufox-pi/commit/8b8a05286c22b6aca4182a0a024c453d9735251d))
+* **client:** migrate initial-url ssrf error to ssrf_blocked { hop: initial } ([5bd28a2](https://github.com/MonsieurBarti/camoufox-pi/commit/5bd28a2c688406bc2932b72c9e2e2ab02a5afd4d))
+* **client:** re-check ssrf guard after post-nav pipeline in fetchurl and search ([d41f955](https://github.com/MonsieurBarti/camoufox-pi/commit/d41f95590e40c969e4f176fbecc34ebad833def2))
+* **errors:** add ssrf_blocked variant to camoufoxerror ([62c6f7f](https://github.com/MonsieurBarti/camoufox-pi/commit/62c6f7f75af31181ced22605106d4872f61669e6))
+* **security:** add attachssrfguard for per-hop redirect ssrf protection ([71334fb](https://github.com/MonsieurBarti/camoufox-pi/commit/71334fb97a2acc723617bc3de4861d45ddd7e0fc))
+
+
+### Bug Fixes
+
+* **client:** prioritize ssrf_blocked over pipeline errors in fetchurl and search catch ([8ae7be7](https://github.com/MonsieurBarti/camoufox-pi/commit/8ae7be7199c8830edc7cef2111b57e7ffd615abf))
+* **security:** harden ssrf, tier sub-resource blocking, cover popups ([c9973e0](https://github.com/MonsieurBarti/camoufox-pi/commit/c9973e0fea991e74985286632739292cf132c0b2))
+
 ## [0.1.3](https://github.com/MonsieurBarti/camoufox-pi/compare/camoufox-pi-v0.1.2...camoufox-pi-v0.1.3) (2026-04-13)
 
 
