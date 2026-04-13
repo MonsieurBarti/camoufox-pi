@@ -3,6 +3,7 @@ import type { Browser, BrowserContext, Page } from "playwright-core";
 import { CamoufoxErrorBox, mapPlaywrightError, sanitizeReason } from "../errors.js";
 import { duckduckgoAdapter } from "../search/adapters/duckduckgo.js";
 import type { RawResult } from "../search/types.js";
+import { type SsrfGuard, attachSsrfGuard } from "../security/redirect-guard.js";
 import { type LookupFn, assertSafeTarget } from "../security/ssrf.js";
 import type { CamoufoxConfig } from "../types.js";
 import { DEFAULT_CONFIG } from "../types.js";
@@ -407,6 +408,7 @@ export class CamoufoxClient {
 		page: Page;
 		response: { status(): number; url(): string };
 		cleanup: () => void;
+		guard: SsrfGuard;
 	}> {
 		let context: BrowserContext;
 		let ownContext = false;
@@ -419,6 +421,7 @@ export class CamoufoxClient {
 		}
 		const combined = combineSignals(opts.signal, opts.timeoutMs);
 		const page = await context.newPage();
+		const guard = await attachSsrfGuard(page, this.ssrfLookup ? { lookup: this.ssrfLookup } : {});
 		const abortHandler = () => {
 			page.close().catch(() => undefined);
 		};
@@ -426,16 +429,31 @@ export class CamoufoxClient {
 		const cleanup = () => {
 			combined.signal.removeEventListener("abort", abortHandler);
 			combined.cleanup();
+			guard.detach().catch(() => undefined);
 			if (ownContext) {
 				context.close().catch(() => undefined);
 			}
 		};
 		const started = Date.now();
 		try {
-			const response = await page.goto(url, {
-				timeout: opts.timeoutMs,
-				waitUntil: opts.waitUntil,
-			});
+			let response: Awaited<ReturnType<Page["goto"]>>;
+			try {
+				response = await page.goto(url, {
+					timeout: opts.timeoutMs,
+					waitUntil: opts.waitUntil,
+				});
+			} catch (err) {
+				const blocked = guard.getBlockedHop();
+				if (blocked) {
+					throw new CamoufoxErrorBox({
+						type: "ssrf_blocked",
+						hop: blocked.hop,
+						url: blocked.url,
+						reason: sanitizeReason(blocked.reason),
+					});
+				}
+				throw err;
+			}
 			if (!response) {
 				throw new CamoufoxErrorBox({
 					type: "network",
@@ -443,11 +461,20 @@ export class CamoufoxClient {
 					url,
 				});
 			}
+			const blockedAfterGoto = guard.getBlockedHop();
+			if (blockedAfterGoto) {
+				throw new CamoufoxErrorBox({
+					type: "ssrf_blocked",
+					hop: blockedAfterGoto.hop,
+					url: blockedAfterGoto.url,
+					reason: sanitizeReason(blockedAfterGoto.reason),
+				});
+			}
 			const status = response.status();
 			if (status >= 400) {
 				throw new CamoufoxErrorBox({ type: "http", status, url: response.url() });
 			}
-			return { page, response, cleanup };
+			return { page, response, cleanup, guard };
 		} catch (err) {
 			cleanup();
 			await page.close().catch(() => undefined);
