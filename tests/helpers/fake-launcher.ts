@@ -136,6 +136,10 @@ export function makeFakeLauncher(
 		const routeHandlers: Array<(route: FakeRoute, request: FakeRequest) => void | Promise<void>> =
 			[];
 		const mainFrameObj = { __isMain: true };
+		// Minimal event-emitter shim. Production code uses page.on("popup", …)
+		// + page.off(…); tests don't fire popup events directly through this
+		// path, but the guard registers listeners so the methods must exist.
+		const listeners: Record<string, Array<(arg: unknown) => void>> = {};
 		const page = {
 			async goto(
 				url: string,
@@ -287,10 +291,30 @@ export function makeFakeLauncher(
 			mainFrame() {
 				return mainFrameObj;
 			},
+			on(event: string, handler: (arg: unknown) => void): unknown {
+				let arr = listeners[event];
+				if (!arr) {
+					arr = [];
+					listeners[event] = arr;
+				}
+				arr.push(handler);
+				return page;
+			},
+			off(event: string, handler: (arg: unknown) => void): unknown {
+				const arr = listeners[event];
+				if (arr) {
+					const i = arr.indexOf(handler);
+					if (i >= 0) arr.splice(i, 1);
+				}
+				return page;
+			},
 			async __fireRequest(req: FakeRequest, route: FakeRoute): Promise<void> {
 				for (const h of routeHandlers) {
 					await h(route, req);
 				}
+			},
+			__emit(event: string, arg: unknown): void {
+				for (const h of listeners[event] ?? []) h(arg);
 			},
 			async close(): Promise<void> {
 				if (!closed) {

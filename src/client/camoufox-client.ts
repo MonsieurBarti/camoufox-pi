@@ -275,15 +275,7 @@ export class CamoufoxClient {
 				};
 				if (format === "markdown") result.markdown = cappedBody;
 				if (screenshotResult) result.screenshot = screenshotResult;
-				const lateBlock = guard.getBlockedHop();
-				if (lateBlock) {
-					throw new CamoufoxErrorBox({
-						type: "ssrf_blocked",
-						hop: lateBlock.hop,
-						url: lateBlock.url,
-						reason: sanitizeReason(lateBlock.reason),
-					});
-				}
+				guard.assertNotBlocked();
 				this.events.emit("fetch_url", {
 					spanId,
 					url,
@@ -302,18 +294,10 @@ export class CamoufoxClient {
 				return result;
 			} catch (err) {
 				// A guard-recorded block takes precedence over any pipeline error:
-				// the fetch already touched an unsafe hop, so classifying the result
-				// as ssrf_blocked (not config_invalid / network / timeout) preserves
-				// the security-signal visibility for callers.
-				const raceBlock = guard.getBlockedHop();
-				if (raceBlock) {
-					throw new CamoufoxErrorBox({
-						type: "ssrf_blocked",
-						hop: raceBlock.hop,
-						url: raceBlock.url,
-						reason: sanitizeReason(raceBlock.reason),
-					});
-				}
+				// the fetch already touched an unsafe hop, so classifying the
+				// result as ssrf_blocked (not config_invalid / network / timeout)
+				// preserves the security-signal visibility for callers.
+				guard.assertNotBlocked();
 				if (opts.signal.aborted) {
 					throw new CamoufoxErrorBox({ type: "aborted" });
 				}
@@ -390,17 +374,10 @@ export class CamoufoxClient {
 			};
 			if (opts.isolate !== undefined) navOpts.isolate = opts.isolate;
 			const { page, cleanup, guard } = await this.navigate(url, navOpts);
+			const searchStarted = Date.now();
 			try {
 				const results = await adapter.parseResults(page, maxResults);
-				const lateBlock = guard.getBlockedHop();
-				if (lateBlock) {
-					throw new CamoufoxErrorBox({
-						type: "ssrf_blocked",
-						hop: lateBlock.hop,
-						url: lateBlock.url,
-						reason: sanitizeReason(lateBlock.reason),
-					});
-				}
+				guard.assertNotBlocked();
 				this.events.emit("search", {
 					spanId,
 					engine: "duckduckgo",
@@ -414,20 +391,21 @@ export class CamoufoxClient {
 			} catch (err) {
 				// See fetchUrl: guard-recorded block takes precedence over any
 				// pipeline error to preserve the security-signal visibility.
-				const raceBlock = guard.getBlockedHop();
-				if (raceBlock) {
-					throw new CamoufoxErrorBox({
-						type: "ssrf_blocked",
-						hop: raceBlock.hop,
-						url: raceBlock.url,
-						reason: sanitizeReason(raceBlock.reason),
-					});
-				}
+				guard.assertNotBlocked();
 				if (opts.signal.aborted) {
 					throw new CamoufoxErrorBox({ type: "aborted" });
 				}
 				if (err instanceof CamoufoxErrorBox) throw err;
-				throw err;
+				// Parity with fetchUrl: classify Playwright pipeline errors via
+				// mapPlaywrightError so search surfaces network/timeout/aborted
+				// consistently instead of a bare rethrow.
+				const mapped = mapPlaywrightError(err, {
+					url,
+					phase: "nav",
+					elapsedMs: Date.now() - searchStarted,
+					signal: opts.signal,
+				});
+				throw new CamoufoxErrorBox(mapped);
 			} finally {
 				cleanup();
 				await page.close().catch(() => undefined);
@@ -468,7 +446,10 @@ export class CamoufoxClient {
 			page.close().catch(() => undefined);
 		};
 		combined.signal.addEventListener("abort", abortHandler, { once: true });
+		let cleanupRan = false;
 		const cleanup = () => {
+			if (cleanupRan) return;
+			cleanupRan = true;
 			combined.signal.removeEventListener("abort", abortHandler);
 			combined.cleanup();
 			guard.detach().catch(() => undefined);
@@ -485,15 +466,7 @@ export class CamoufoxClient {
 					waitUntil: opts.waitUntil,
 				});
 			} catch (err) {
-				const blocked = guard.getBlockedHop();
-				if (blocked) {
-					throw new CamoufoxErrorBox({
-						type: "ssrf_blocked",
-						hop: blocked.hop,
-						url: blocked.url,
-						reason: sanitizeReason(blocked.reason),
-					});
-				}
+				guard.assertNotBlocked();
 				throw err;
 			}
 			if (!response) {
@@ -503,15 +476,7 @@ export class CamoufoxClient {
 					url,
 				});
 			}
-			const blockedAfterGoto = guard.getBlockedHop();
-			if (blockedAfterGoto) {
-				throw new CamoufoxErrorBox({
-					type: "ssrf_blocked",
-					hop: blockedAfterGoto.hop,
-					url: blockedAfterGoto.url,
-					reason: sanitizeReason(blockedAfterGoto.reason),
-				});
-			}
+			guard.assertNotBlocked();
 			const status = response.status();
 			if (status >= 400) {
 				throw new CamoufoxErrorBox({ type: "http", status, url: response.url() });

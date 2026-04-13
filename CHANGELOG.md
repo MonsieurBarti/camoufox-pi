@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### ⚠ BREAKING CHANGES
+
+- **security:** `CamoufoxClient.fetchUrl` / `search` now throw `ssrf_blocked { hop, url, reason }` instead of `config_invalid { field: "url" }` when the caller-supplied URL targets a private / loopback / link-local / CGNAT / cloud-metadata address, OR when a redirect hop, subframe navigation, popup page, or sub-resource targets a cloud-metadata endpoint. Callers catching `config_invalid` with `field === "url"` as an SSRF signal must switch to `ssrf_blocked`. The new `hop` discriminator is one of `"initial" | "redirect" | "subframe" | "subresource"`.
+
+### Security
+
+- Per-hop SSRF validation: every document-type request (main-frame initial, redirect, subframe) is re-checked via `assertSafeTarget` at dispatch time, not just pre-navigation. Sub-resource requests are intercepted with a narrower policy (cloud-metadata endpoints only) to preserve stealth while closing the IMDS blind-SSRF class.
+- `assertSafeTarget` hardened: scheme allowlist (http/https only), WHATWG-style IPv4 alt-encoding parser (closes `0x7f.0.0.1`, `2130706433`, `0177.0.0.1`, `127.1` bypasses), `node:net.isIPv6` + prefix-matcher for IPv6 (closes `::ffff:7f00:1`, `::127.0.0.1`, `::`, NAT64 `64:ff9b::/96` bypasses).
+- Popup coverage: `page.on("popup", …)` listener attaches the guard to `window.open` / `target="_blank"` pages so they cannot evade the parent's per-page route handler.
+- Resolved internal IPs scrubbed from the `reason` string — prevents topology disclosure via caller-visible errors.
+
 ## [0.1.3](https://github.com/MonsieurBarti/camoufox-pi/compare/camoufox-pi-v0.1.2...camoufox-pi-v0.1.3) (2026-04-13)
 
 

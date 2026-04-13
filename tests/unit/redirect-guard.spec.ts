@@ -260,4 +260,88 @@ describe("attachSsrfGuard", () => {
 		expect(r2.calls.aborted).toEqual([]);
 		expect(guard.getBlockedHop()?.url).toBe("http://10.0.0.1/");
 	});
+
+	it("blocks sub-resource to cloud-metadata endpoint (tiered policy)", async () => {
+		const { page } = await makeFakePage();
+		const guard = await attachSsrfGuard(page, { lookup: publicLookup });
+		const mainFrame = getMainFrame(page);
+		const route = makeFakeRoute();
+		await getFire(page)(
+			makeFakeRequest({
+				url: "http://169.254.169.254/latest/meta-data/",
+				resourceType: "image",
+				framesMap: { mainFrame },
+				mainFrame: true,
+				isNavigation: false,
+			}),
+			route,
+		);
+		expect(route.calls.continued).toBe(0);
+		expect(route.calls.aborted).toEqual(["blockedbyclient"]);
+		expect(guard.getBlockedHop()).toMatchObject({
+			hop: "subresource",
+			url: "http://169.254.169.254/latest/meta-data/",
+		});
+		expect(guard.getBlockedHop()?.reason).toMatch(/cloud-metadata/);
+	});
+
+	it("assertNotBlocked throws CamoufoxError when a block is recorded", async () => {
+		const { page } = await makeFakePage();
+		const guard = await attachSsrfGuard(page, { lookup: publicLookup });
+		const mainFrame = getMainFrame(page);
+		await getFire(page)(
+			makeFakeRequest({
+				url: "http://127.0.0.1/",
+				framesMap: { mainFrame },
+				mainFrame: true,
+				isNavigation: true,
+			}),
+			makeFakeRoute(),
+		);
+		expect(() => guard.assertNotBlocked()).toThrow(/ssrf_blocked/);
+	});
+
+	it("assertNotBlocked is a no-op when no block recorded", async () => {
+		const { page } = await makeFakePage();
+		const guard = await attachSsrfGuard(page, { lookup: publicLookup });
+		expect(() => guard.assertNotBlocked()).not.toThrow();
+	});
+
+	it("popup pages get their own handler and blocks record on the parent guard (H3)", async () => {
+		// Simulate window.open/target=_blank: the parent page emits a "popup"
+		// event with the newly created page. The guard should attach to that
+		// popup and route its unsafe requests through the same BlockedHop slot.
+		const { page: parentPage } = await makeFakePage();
+		const guard = await attachSsrfGuard(parentPage, { lookup: publicLookup });
+		// Create a second page from the same launcher's context — it'll have
+		// its own route/fireRequest surface.
+		const launcher = makeFakeLauncher();
+		const launched = await launcher.launch();
+		const popupPage = await launched.context.newPage();
+		// Fire the popup event: the guard's popupHandler will attachTo(popupPage).
+		(parentPage as unknown as { __emit: (e: string, a: unknown) => void }).__emit(
+			"popup",
+			popupPage,
+		);
+		// Give the async attachTo a tick to register the handler on the popup.
+		await new Promise((r) => setTimeout(r, 0));
+		// Fire an unsafe request on the popup — should be blocked by the guard
+		// that attached via the popup event.
+		const mainFrame = (popupPage as unknown as { mainFrame(): unknown }).mainFrame();
+		const route = makeFakeRoute();
+		await (popupPage as unknown as { __fireRequest: FireFn }).__fireRequest(
+			makeFakeRequest({
+				url: "http://10.0.0.1/admin",
+				framesMap: { mainFrame },
+				mainFrame: true,
+				isNavigation: true,
+			}),
+			route,
+		);
+		expect(route.calls.aborted).toEqual(["blockedbyclient"]);
+		// Parent's guard sees the block — this is the H3 fix.
+		expect(guard.getBlockedHop()).toMatchObject({
+			url: "http://10.0.0.1/admin",
+		});
+	});
 });

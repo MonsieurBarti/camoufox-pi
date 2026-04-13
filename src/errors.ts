@@ -17,7 +17,7 @@ export type CamoufoxError =
 	| { type: "config_invalid"; field: string; reason: string }
 	| {
 			type: "ssrf_blocked";
-			hop: "initial" | "redirect" | "subframe";
+			hop: "initial" | "redirect" | "subframe" | "subresource";
 			url: string;
 			reason: string;
 	  };
