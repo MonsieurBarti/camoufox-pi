@@ -12,8 +12,12 @@ const typicalPath = fileURLToPath(
 const zeroPath = fileURLToPath(
 	new URL("../../fixtures/google-serp/zero-results.html", import.meta.url),
 );
+const clampPath = fileURLToPath(
+	new URL("../../fixtures/google-serp/clamp-snippet.html", import.meta.url),
+);
 const typicalHtml = readFileSync(typicalPath, "utf8");
 const zeroHtml = readFileSync(zeroPath, "utf8");
+const clampHtml = readFileSync(clampPath, "utf8");
 
 function fakePage(html: string) {
 	return {
@@ -72,6 +76,24 @@ describe("googleAdapter.parseResults", () => {
 		const results = await googleAdapter.parseResults(fakePage(adversarialHtml) as any, 10);
 		expect(results).toHaveLength(1);
 		expect(results[0]?.url).toBe("https://ok.example/p");
+	});
+
+	it("falls back to -webkit-line-clamp snippet when data-sncf absent", async () => {
+		// biome-ignore lint/suspicious/noExplicitAny: narrow stub
+		const results = await googleAdapter.parseResults(fakePage(clampHtml) as any, 10);
+		expect(results).toHaveLength(2);
+		expect(results[0]).toEqual({
+			title: "Clamp A",
+			url: "https://clamp.example/a",
+			snippet: "Clamped snippet body A.",
+			rank: 1,
+		});
+		expect(results[1]).toEqual({
+			title: "Clamp B",
+			url: "https://clamp.example/b",
+			snippet: "Clamped snippet body B.",
+			rank: 2,
+		});
 	});
 
 	it("buildUrl encodes query properly with no extra params", () => {
