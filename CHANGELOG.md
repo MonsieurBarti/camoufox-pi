@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.1.3](https://github.com/MonsieurBarti/camoufox-pi/compare/camoufox-pi-v0.1.2...camoufox-pi-v0.1.3) (2026-04-13)
+
+
+### Features
+
+* **client:** add capture-page-screenshot helper ([8ce61d3](https://github.com/MonsieurBarti/camoufox-pi/commit/8ce61d37f0b5061f11b1548f1bfe9181878d2874))
+* **client:** add extract-slice helper for selector-scoped extraction ([3600764](https://github.com/MonsieurBarti/camoufox-pi/commit/3600764f8fca0262c1f181d5e1cc497ab6b34296))
+* **client:** add html-to-markdown with relative-url absolutization ([19562df](https://github.com/MonsieurBarti/camoufox-pi/commit/19562df70dda2dfb9bbd54e793c59b6df240da91))
+* **client:** add markdown format to fetch-url ([3d6e6a2](https://github.com/MonsieurBarti/camoufox-pi/commit/3d6e6a2f7edaff98bcea338774cdeb24069b0f23))
+* **client:** add resolve-wait-until helper for render mode ([79dcc3d](https://github.com/MonsieurBarti/camoufox-pi/commit/79dcc3d002e7c5547db159a636012fa173d2eba4))
+* **client:** add screenshot capture to fetch-url ([799fabe](https://github.com/MonsieurBarti/camoufox-pi/commit/799fabe1a01bba30424cdbfb58d759a13af5a1a4))
+* **client:** add selector scoping to fetch-url ([614374f](https://github.com/MonsieurBarti/camoufox-pi/commit/614374fa4f08166c5292b6bc5b84eb71081feeb1))
+* **client:** add wait-for-selector to fetch-url pipeline ([deace9d](https://github.com/MonsieurBarti/camoufox-pi/commit/deace9db7462600acaca8ca31e92b26f277ce17a))
+* **client:** add wait-for-selector-or-throw helper ([c52c9d0](https://github.com/MonsieurBarti/camoufox-pi/commit/c52c9d004e08072a59779c2e39b173c3737d639c))
+* **client:** extend fetch-url event payload with feature flags ([49e0e86](https://github.com/MonsieurBarti/camoufox-pi/commit/49e0e862f753dc309146aec6cf9f2e39d8438dfc))
+* **client:** fetch-url capability parity (milestone 3) ([9ddb354](https://github.com/MonsieurBarti/camoufox-pi/commit/9ddb35405c85e65bfcadbc1a20c83281699d2120))
+* **client:** wire render-mode through fetch-url to wait-until ([71d4b3b](https://github.com/MonsieurBarti/camoufox-pi/commit/71d4b3b511d68932bf61edce5784c1cbe42f88d5))
+* **errors:** add wait_for_selector and screenshot timeout phases ([f7672df](https://github.com/MonsieurBarti/camoufox-pi/commit/f7672dfb83bf0dbb6df156475c28aac57d71629a))
+* **tool:** extend tff-fetch-url with render/selector/markdown/screenshot ([d94f786](https://github.com/MonsieurBarti/camoufox-pi/commit/d94f7865ec7f94d1295ad3f398af28160c3a72a7))
+
+
+### Bug Fixes
+
+* **client:** surface turndown failures via outer config_invalid wrapper ([54d5f30](https://github.com/MonsieurBarti/camoufox-pi/commit/54d5f30b6b6b4bde6569bee312fc20e35ebdfe79))
+* **client:** wrap raw playwright errors from post-nav pipeline ([e338236](https://github.com/MonsieurBarti/camoufox-pi/commit/e338236bce49ef006dd85bfe78192bef29fb1ce3))
+
 ## [0.1.2](https://github.com/MonsieurBarti/camoufox-pi/compare/camoufox-pi-v0.1.1...camoufox-pi-v0.1.2) (2026-04-12)
 
 
