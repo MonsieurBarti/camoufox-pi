@@ -33,7 +33,7 @@ Sibling to [`@the-forge-flow/lightpanda-pi`](https://github.com/MonsieurBarti/li
 - `tff-fetch_url` — fetch a URL via stealth Firefox and return HTML
 - `tff-search_web` — web search via DuckDuckGo (Google lands in a follow-up slice)
 - **Stealth properties** — C++-level fingerprint spoofing, patched canvas/WebGL, Juggler (Firefox remote) protocol — not CDP
-- **SSRF protection** — private IP ranges, link-local, loopback, cloud metadata, and CGNAT blocked pre-navigation
+- **SSRF protection** — private IP ranges, link-local, loopback, cloud metadata, and CGNAT blocked pre-navigation AND on every redirect hop and subframe request
 - **Scheme allow-list** — only `http:` / `https:` accepted at the tool boundary; `file:`, `javascript:`, `data:`, `chrome://` rejected
 - **Response size caps** — UTF-8-safe truncation at `max_bytes` (default 2 MiB, max 50 MiB) with `truncated` flag
 - **`isolate: true` opt-in** — one-shot browser context per call, no cookie/storage bleed
@@ -101,7 +101,7 @@ Then reload PI with `/reload` (or restart it). First tool call downloads the Cam
 ### Security
 
 - **Scheme allow-list.** Only `http:` and `https:` accepted at the tool boundary. `file:`, `javascript:`, `data:`, `chrome://` and similar are rejected before any navigation.
-- **SSRF protection.** Targets that resolve to private IP ranges (loopback, RFC1918, link-local, cloud metadata 169.254.169.254, CGNAT, IPv6 ULAs) are rejected pre-navigation. No opt-out in v0.1.0.
+- **SSRF protection.** Per-hop validation: the caller-supplied URL is checked pre-navigation, and every document-type request the browser issues (main-frame initial, redirect hop, subframe navigation) is re-checked via a Playwright route handler. Any unsafe hop — loopback, RFC1918, link-local, cloud metadata 169.254.169.254, CGNAT, IPv6 ULAs — aborts the whole call with `ssrf_blocked { hop: "initial" | "redirect" | "subframe", url, reason }`. Sub-resources (images, scripts, XHR) are not intercepted.
 - **Response truncation.** Bodies exceeding `max_bytes` are cut at a UTF-8-safe byte boundary and flagged `truncated: true`. Default 2 MiB, max 50 MiB.
 - **Untrusted content.** The `tff-fetch_url` prompt guidelines explicitly warn the LLM that fetched HTML is UNTRUSTED and must not be executed, eval'd, or treated as authoritative instructions.
 - **`isolate: true`** for sensitive fetches — fresh `BrowserContext` per call, no cookie/storage reuse with the shared session context.
@@ -235,8 +235,9 @@ Key components in `src/`:
 | `src/client/fetch-pipeline.ts` | `fetchUrl` helpers — wait-strategy, selector waits, DOM slicing, HTML→markdown, screenshot capture, opts validator |
 | `src/client/launcher.ts` | `Launcher` interface + `RealLauncher` (sole `camoufox-js` importer) |
 | `src/client/signal.ts` | `combineSignals(external, timeoutMs)` — turn-signal + timeout composition |
-| `src/errors.ts` | `CamoufoxError` discriminated union + `CamoufoxErrorBox` + `mapPlaywrightError` |
-| `src/security/ssrf.ts` | Private-IP + link-local + cloud-metadata blocklist, pre-navigation |
+| `src/errors.ts` | `CamoufoxError` discriminated union (incl. `ssrf_blocked { hop, url, reason }`) + `CamoufoxErrorBox` + `mapPlaywrightError` |
+| `src/security/ssrf.ts` | Private-IP + link-local + cloud-metadata blocklist (IPv4/IPv6 literal + DNS-resolved) |
+| `src/security/redirect-guard.ts` | Per-hop SSRF guard via `page.route` — intercepts every document-type navigation (main-frame initial, redirect, subframe) and aborts unsafe targets |
 | `src/search/adapters/duckduckgo.ts` | DOM-query SERP parser against `html.duckduckgo.com` |
 | `src/tools/fetch-url.ts` | `tff-fetch_url` tool definition |
 | `src/tools/search-web.ts` | `tff-search_web` tool definition |
