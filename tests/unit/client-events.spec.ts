@@ -88,7 +88,11 @@ describe("CamoufoxClient — operation events", () => {
 		client.events.on("search", (e) =>
 			seen.push({ spanId: e.spanId, engine: e.engine, resultCount: e.resultCount }),
 		);
-		await client.search("q", { signal: new AbortController().signal, maxResults: 10 });
+		await client.search("q", {
+			signal: new AbortController().signal,
+			maxResults: 10,
+			engine: "duckduckgo",
+		});
 		expect(seen).toHaveLength(1);
 		expect(seen[0]?.engine).toBe("duckduckgo");
 		expect(seen[0]?.resultCount).toBe(2);

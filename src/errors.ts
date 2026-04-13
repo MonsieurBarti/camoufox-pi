@@ -20,6 +20,15 @@ export type CamoufoxError =
 			hop: "initial" | "redirect" | "subframe" | "subresource";
 			url: string;
 			reason: string;
+	  }
+	| {
+			type: "search_all_engines_blocked";
+			lastSignal:
+				| "http_status"
+				| "sorry_interstitial"
+				| "consent_drift"
+				| "empty_results"
+				| "navigation_failed";
 	  };
 
 // Strip absolute/file-URL paths and truncate before embedding third-party
@@ -34,16 +43,36 @@ export function sanitizeReason(msg: string, maxChars = 200): string {
 	return out;
 }
 
+const UNIX_PATH_RE = /(?<![\w@])(?:\/(?:Users|home|root|var|tmp|opt)\/[^\s"'<>)]+)/g;
+const WIN_PATH_RE =
+	/(?:[A-Za-z]:\\(?:[^\\"'<>|]+\\)+[^\\"'<>|\s]+|\\\\[^\\"'<>|]+\\(?:[^\\"'<>|]+\\)*[^\\"'<>|\s]+)/g;
+const ENV_VAR_RE =
+	/(?:\$\{[A-Za-z_][A-Za-z0-9_]*\}|\$[A-Za-z_][A-Za-z0-9_]*|%[A-Za-z_][A-Za-z0-9_]*%)/g;
+
+function redactSensitiveStrings(s: string): string {
+	return s
+		.replace(UNIX_PATH_RE, "<redacted>")
+		.replace(WIN_PATH_RE, "<redacted>")
+		.replace(ENV_VAR_RE, "<redacted>");
+}
+
 function sanitizeForMessage(err: CamoufoxError): string {
-	// Cap stderr and redact URL query strings from error payloads before
-	// serializing into .message (which can surface in logs / stack traces).
+	// Scrub sensitive strings first, then cap stderr, then strip URL query
+	// strings. Redacting before capping prevents the greedy path/env-var
+	// regexes from consuming the truncation marker at the cut boundary.
 	const redacted: Record<string, unknown> = { ...err };
+	for (const key of Object.keys(redacted)) {
+		const v = redacted[key];
+		if (typeof v === "string") {
+			redacted[key] = redactSensitiveStrings(v);
+		}
+	}
 	if (typeof redacted.stderr === "string" && redacted.stderr.length > 500) {
 		redacted.stderr = `${redacted.stderr.slice(0, 500)}…[${redacted.stderr.length} bytes]`;
 	}
 	if (typeof redacted.url === "string") {
 		try {
-			const u = new URL(redacted.url);
+			const u = new URL(redacted.url as string);
 			redacted.url = `${u.origin}${u.pathname}`;
 		} catch {
 			// leave as-is if unparseable

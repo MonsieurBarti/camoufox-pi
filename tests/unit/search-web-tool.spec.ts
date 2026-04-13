@@ -66,4 +66,24 @@ describe("tff-search_web tool", () => {
 		expect(res.details.atLimit).toBe(false);
 		await client.close();
 	});
+
+	it("passes engine option through to client.search", async () => {
+		const launcher = makeFakeLauncher({
+			pageBehavior: () => ({
+				status: 200,
+				evalResults: {
+					"div.result, div.web-result": [{ title: "B", url: "https://b.test/", snippet: "b" }],
+				},
+			}),
+		});
+		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
+		const tool = createSearchWebTool(client);
+		const res = await tool.execute(
+			"id",
+			{ query: "test", engine: "duckduckgo" },
+			new AbortController().signal,
+		);
+		expect(res.details).toMatchObject({ engine: "duckduckgo", query: "test" });
+		await client.close();
+	});
 });

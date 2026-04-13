@@ -2,15 +2,17 @@ import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 
 import type { CamoufoxError } from "../errors.js";
+import type { BlockSignal, SearchEngineName } from "../search/types.js";
 
 export interface SearchEvent {
 	readonly spanId: string;
-	readonly engine: "duckduckgo";
+	readonly engine: SearchEngineName;
 	readonly query: string;
 	readonly maxResults: number;
 	readonly durationMs: number;
 	readonly resultCount: number;
 	readonly atLimit: boolean;
+	readonly fallback_reason?: BlockSignal["kind"];
 }
 
 export interface FetchUrlEvent {
