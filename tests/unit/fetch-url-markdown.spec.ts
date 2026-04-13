@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import TurndownService from "turndown";
+import { describe, expect, it, vi } from "vitest";
 
 import { CamoufoxClient } from "../../src/client/camoufox-client.js";
 import { makeFakeLauncher } from "../helpers/fake-launcher.js";
@@ -88,5 +89,35 @@ describe("CamoufoxClient.fetchUrl format: markdown", () => {
 		});
 		expect(captured).toMatchObject({ format: "markdown" });
 		await client.close();
+	});
+
+	it("maps turndown failures to config_invalid via the outer wrapper", async () => {
+		const spy = vi.spyOn(TurndownService.prototype, "turndown").mockImplementation(() => {
+			throw new Error("simulated turndown failure");
+		});
+		try {
+			const launcher = makeFakeLauncher({
+				pageBehavior: () => ({
+					status: 200,
+					html: "<p>x</p>",
+					finalUrl: "https://x.test/",
+				}),
+			});
+			const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
+			const p = client.fetchUrl("https://x.test/", {
+				signal: new AbortController().signal,
+				format: "markdown",
+			});
+			await expect(p).rejects.toMatchObject({
+				err: {
+					type: "config_invalid",
+					field: "format",
+					reason: expect.stringContaining("markdown conversion failed"),
+				},
+			});
+			await client.close();
+		} finally {
+			spy.mockRestore();
+		}
 	});
 });

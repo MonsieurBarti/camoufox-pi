@@ -57,14 +57,9 @@ export function htmlToMarkdown(html: string, baseUrl: string): string {
 		codeBlockStyle: "fenced",
 		bulletListMarker: "-",
 	});
-	try {
-		return td.turndown(cleaned);
-	} catch {
-		// Turndown should not throw on reasonable input; if it does, fall back
-		// to raw stripped HTML so the caller still gets something usable. The
-		// client layer wraps this in config_invalid if empty isn't acceptable.
-		return cleaned;
-	}
+	// Intentionally unguarded: the outer wrapper in fetchUrl maps a throw
+	// here to config_invalid { field: "format" } per spec §5.
+	return td.turndown(cleaned);
 }
 
 export async function extractSlice(
