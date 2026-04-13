@@ -203,7 +203,7 @@ export class CamoufoxClient {
 				waitUntil: resolveWaitUntil(renderMode),
 			};
 			if (opts.isolate !== undefined) navOpts.isolate = opts.isolate;
-			const { page, response, cleanup } = await this.navigate(url, navOpts);
+			const { page, response, cleanup, guard } = await this.navigate(url, navOpts);
 			let currentPhase: "nav" | "wait_for_selector" | "screenshot" | "extract" = "nav";
 			try {
 				if (opts.waitForSelector !== undefined) {
@@ -275,6 +275,15 @@ export class CamoufoxClient {
 				};
 				if (format === "markdown") result.markdown = cappedBody;
 				if (screenshotResult) result.screenshot = screenshotResult;
+				const lateBlock = guard.getBlockedHop();
+				if (lateBlock) {
+					throw new CamoufoxErrorBox({
+						type: "ssrf_blocked",
+						hop: lateBlock.hop,
+						url: lateBlock.url,
+						reason: sanitizeReason(lateBlock.reason),
+					});
+				}
 				this.events.emit("fetch_url", {
 					spanId,
 					url,
@@ -367,9 +376,18 @@ export class CamoufoxClient {
 				waitUntil: adapter.waitStrategy.readyState,
 			};
 			if (opts.isolate !== undefined) navOpts.isolate = opts.isolate;
-			const { page, cleanup } = await this.navigate(url, navOpts);
+			const { page, cleanup, guard } = await this.navigate(url, navOpts);
 			try {
 				const results = await adapter.parseResults(page, maxResults);
+				const lateBlock = guard.getBlockedHop();
+				if (lateBlock) {
+					throw new CamoufoxErrorBox({
+						type: "ssrf_blocked",
+						hop: lateBlock.hop,
+						url: lateBlock.url,
+						reason: sanitizeReason(lateBlock.reason),
+					});
+				}
 				this.events.emit("search", {
 					spanId,
 					engine: "duckduckgo",
