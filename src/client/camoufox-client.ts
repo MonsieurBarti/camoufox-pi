@@ -17,6 +17,9 @@ import {
 import {
 	type Format,
 	type RenderMode,
+	type ScreenshotOpts,
+	type ScreenshotResult,
+	capturePageScreenshot,
 	extractSlice,
 	htmlToMarkdown,
 	resolveWaitUntil,
@@ -160,11 +163,12 @@ export class CamoufoxClient {
 			waitForSelector?: string;
 			selector?: string;
 			format?: Format;
+			screenshot?: ScreenshotOpts;
 		},
 	): Promise<{
 		html: string;
 		markdown?: string;
-		screenshot?: import("./fetch-pipeline.js").ScreenshotResult;
+		screenshot?: ScreenshotResult;
 		status: number;
 		finalUrl: string;
 		bytes: number;
@@ -248,6 +252,32 @@ export class CamoufoxClient {
 					reason: `must be html or markdown, got ${String(format)}`,
 				});
 			}
+			if (opts.screenshot !== undefined) {
+				const s = opts.screenshot;
+				if (s.format !== undefined && s.format !== "png" && s.format !== "jpeg") {
+					throw new CamoufoxErrorBox({
+						type: "config_invalid",
+						field: "screenshot.format",
+						reason: `must be png or jpeg, got ${String(s.format)}`,
+					});
+				}
+				if (s.quality !== undefined) {
+					if ((s.format ?? "png") !== "jpeg") {
+						throw new CamoufoxErrorBox({
+							type: "config_invalid",
+							field: "screenshot.quality",
+							reason: "only valid when format: jpeg",
+						});
+					}
+					if (!Number.isInteger(s.quality) || s.quality < 1 || s.quality > 100) {
+						throw new CamoufoxErrorBox({
+							type: "config_invalid",
+							field: "screenshot.quality",
+							reason: `must be integer in [1, 100], got ${s.quality}`,
+						});
+					}
+				}
+			}
 			try {
 				await assertSafeTarget(url, this.ssrfLookup ? { lookup: this.ssrfLookup } : {});
 			} catch (err) {
@@ -276,6 +306,18 @@ export class CamoufoxClient {
 						(opts.timeoutMs ?? this.config.timeoutMs) - (Date.now() - started),
 					);
 					await waitForSelectorOrThrow(page, opts.waitForSelector, remaining);
+				}
+				const SCREENSHOT_MAX_BYTES = 10 * 1024 * 1024;
+				let screenshotResult: ScreenshotResult | undefined;
+				if (opts.screenshot !== undefined) {
+					screenshotResult = await capturePageScreenshot(page, opts.screenshot);
+					if (screenshotResult.bytes > SCREENSHOT_MAX_BYTES) {
+						throw new CamoufoxErrorBox({
+							type: "config_invalid",
+							field: "screenshot",
+							reason: `exceeds 10 MiB cap (got ${screenshotResult.bytes} bytes)`,
+						});
+					}
 				}
 				const { html: rawHtml } = await extractSlice(page, opts.selector);
 				const finalUrl = response.url();
@@ -309,6 +351,7 @@ export class CamoufoxClient {
 				const result: {
 					html: string;
 					markdown?: string;
+					screenshot?: ScreenshotResult;
 					status: number;
 					finalUrl: string;
 					bytes: number;
@@ -321,6 +364,7 @@ export class CamoufoxClient {
 					truncated,
 				};
 				if (format === "markdown") result.markdown = cappedBody;
+				if (screenshotResult) result.screenshot = screenshotResult;
 				this.events.emit("fetch_url", {
 					spanId,
 					url,
@@ -334,7 +378,7 @@ export class CamoufoxClient {
 					usedWaitForSelector: opts.waitForSelector !== undefined,
 					usedSelector: opts.selector !== undefined,
 					format,
-					screenshotBytes: null,
+					screenshotBytes: screenshotResult?.bytes ?? null,
 				});
 				return result;
 			} catch (err) {
