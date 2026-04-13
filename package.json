@@ -1,6 +1,6 @@
 {
 	"name": "@the-forge-flow/camoufox-pi",
-	"version": "0.2.0",
+	"version": "0.2.1",
 	"description": "PI extension for stealth web search and URL fetching via Camoufox",
 	"type": "module",
 	"main": "./dist/index.js",

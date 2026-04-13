@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.2.1](https://github.com/MonsieurBarti/camoufox-pi/compare/camoufox-pi-v0.2.0...camoufox-pi-v0.2.1) (2026-04-13)
+
+
+### Features
+
+* **client:** delegate search to orchestrator with engine option ([5d8bac6](https://github.com/MonsieurBarti/camoufox-pi/commit/5d8bac6acc7405e527f9856c4559a09c9522c9ce))
+* **errors:** add search_all_engines_blocked variant ([baaf6a2](https://github.com/MonsieurBarti/camoufox-pi/commit/baaf6a2e28433a03a797e6039028336222af9847))
+* google adapter with auto-mode fallback (milestone 4) ([821a163](https://github.com/MonsieurBarti/camoufox-pi/commit/821a1639ada485b70fabf1fbc3a21df9a4a88c8c))
+* **search:** add dedicated searchcontext with recycle policy ([ef91369](https://github.com/MonsieurBarti/camoufox-pi/commit/ef91369a7fecb298eaadead2297f514ea39172c8))
+* **search:** add google adapter block-detection ([2874eaa](https://github.com/MonsieurBarti/camoufox-pi/commit/2874eaa6c900a5d56d007b66392d437293ac81db))
+* **search:** add google adapter consent-dismissal ([4d11760](https://github.com/MonsieurBarti/camoufox-pi/commit/4d117609c861f0086204ccf7768a7586dfa85f19))
+* **search:** add google adapter parser ([014a4a5](https://github.com/MonsieurBarti/camoufox-pi/commit/014a4a586fb4d7f16ba322aafc38c1c3226ef648))
+* **search:** add runsearch orchestrator with auto-mode fallback ([be316d3](https://github.com/MonsieurBarti/camoufox-pi/commit/be316d32b84cdf2200fe91e40295615c84c25323))
+* **search:** widen adapter types for multi-engine support ([5d5487f](https://github.com/MonsieurBarti/camoufox-pi/commit/5d5487fb2c71800d2966d2706e9cf77e813820bd))
+* **tool:** surface engine option and refresh search-web description for auto-mode ([fea5705](https://github.com/MonsieurBarti/camoufox-pi/commit/fea5705d2c58e5c61b37326d2da6da8c30915408))
+* **types:** export searchenginename and searchenginechoice ([9b447ed](https://github.com/MonsieurBarti/camoufox-pi/commit/9b447edc1118718eaeff20af6ddad44de8cc1e52))
+
+
+### Bug Fixes
+
+* **search:** guard searchcontext init against concurrent acquirepage races ([938e34e](https://github.com/MonsieurBarti/camoufox-pi/commit/938e34e6c6d021a9749f6e0a4fd2c534029fd325))
+* **search:** remove dead isolate option from client.search and search-web tool ([0272d9f](https://github.com/MonsieurBarti/camoufox-pi/commit/0272d9fdc98fa801957f250b44f8150f12e9c140))
+* **search:** restore unconditional pre-flight ssrf assertion in runsearch ([b619511](https://github.com/MonsieurBarti/camoufox-pi/commit/b619511ab3706671e43ea1091e6ae95dc59a733a))
+* **search:** sanitize nav-error cause and cover mid-loop abort ([b9e46e5](https://github.com/MonsieurBarti/camoufox-pi/commit/b9e46e5ff54a4e74d768e43601a73eb6fa3c0d7f))
+* **security:** sanitize paths and env-var references in error messages (sec2) ([a01b575](https://github.com/MonsieurBarti/camoufox-pi/commit/a01b5757c6eb27320e3faca59f6fb89bca846b99))
+* **security:** widen path and env-var redaction in sanitizeformessage ([c94e3eb](https://github.com/MonsieurBarti/camoufox-pi/commit/c94e3eb4c4a5ddd18fd11839d035051cfa45f812))
+
 ## [0.2.0](https://github.com/MonsieurBarti/camoufox-pi/compare/camoufox-pi-v0.1.3...camoufox-pi-v0.2.0) (2026-04-13)
 
 
