@@ -84,10 +84,17 @@ Then reload PI with `/reload` (or restart it). First tool call downloads the Cam
 
 | Tool | Description | Key parameters |
 |---|---|---|
-| `tff-fetch_url` | Fetch a URL via stealth Firefox, return HTML | `url`, `timeout_ms`, `max_bytes`, `isolate` |
+| `tff-fetch_url` | Fetch a URL via stealth Firefox, return HTML/markdown with optional selector/screenshot | `url`, `timeout_ms`, `max_bytes`, `isolate`, `render_mode`, `selector`, `format`, `screenshot` |
 | `tff-search_web` | Web search (DuckDuckGo) | `query`, `max_results`, `timeout_ms`, `isolate` |
 
-**`tff-fetch_url`** returns `{ url, finalUrl, status, html, bytes, truncated }`. HTML is returned raw (no markdown conversion in v0.1.0). `truncated: true` means the response exceeded `max_bytes` and was cut at a UTF-8-safe boundary.
+**`tff-fetch_url` parameters:**
+- `render_mode`: `"static"` | `"render"` (default) | `"render-and-wait"` — page wait strategy.
+- `wait_for_selector`: CSS selector; waits for element visibility. Only valid with `render_mode: "render-and-wait"`.
+- `selector`: CSS selector; returns `outerHTML` of first match. No-match raises error.
+- `format`: `"html"` (default) | `"markdown"` — body format. Markdown drops HTML to save tokens.
+- `screenshot`: `{ full_page?, format? ("png"|"jpeg"), quality? (1-100, jpeg only) }` — base64 image in response. Images > 10 MiB rejected.
+
+**`tff-fetch_url` returns:** `{ url, finalUrl, status, html, markdown?, screenshot?, bytes, truncated }`. `truncated: true` means the response exceeded `max_bytes` and was cut at a UTF-8-safe boundary.
 
 **`tff-search_web`** returns `{ engine, query, results[], atLimit }` where each result is `{ title, url, snippet, rank }`. `atLimit` means `results.length === max_results` — could mean DDG had more, or exactly that many. No ground-truth "has_more" signal is available from the engine.
 
