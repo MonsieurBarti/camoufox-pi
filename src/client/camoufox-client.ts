@@ -301,6 +301,19 @@ export class CamoufoxClient {
 				});
 				return result;
 			} catch (err) {
+				// A guard-recorded block takes precedence over any pipeline error:
+				// the fetch already touched an unsafe hop, so classifying the result
+				// as ssrf_blocked (not config_invalid / network / timeout) preserves
+				// the security-signal visibility for callers.
+				const raceBlock = guard.getBlockedHop();
+				if (raceBlock) {
+					throw new CamoufoxErrorBox({
+						type: "ssrf_blocked",
+						hop: raceBlock.hop,
+						url: raceBlock.url,
+						reason: sanitizeReason(raceBlock.reason),
+					});
+				}
 				if (opts.signal.aborted) {
 					throw new CamoufoxErrorBox({ type: "aborted" });
 				}
@@ -399,6 +412,17 @@ export class CamoufoxClient {
 				});
 				return { results, engine: "duckduckgo", query };
 			} catch (err) {
+				// See fetchUrl: guard-recorded block takes precedence over any
+				// pipeline error to preserve the security-signal visibility.
+				const raceBlock = guard.getBlockedHop();
+				if (raceBlock) {
+					throw new CamoufoxErrorBox({
+						type: "ssrf_blocked",
+						hop: raceBlock.hop,
+						url: raceBlock.url,
+						reason: sanitizeReason(raceBlock.reason),
+					});
+				}
 				if (opts.signal.aborted) {
 					throw new CamoufoxErrorBox({ type: "aborted" });
 				}
