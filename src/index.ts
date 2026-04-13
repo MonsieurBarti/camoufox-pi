@@ -43,6 +43,7 @@ export type {
 	ErrorEvent,
 } from "./client/events.js";
 export type { CamoufoxError } from "./errors.js";
+export type { RawResult, SearchEngineChoice, SearchEngineName } from "./search/types.js";
 
 // ---------------------------------------------------------------------------
 // Structural PI API — minimal subset of what @mariozechner/pi-coding-agent
