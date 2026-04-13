@@ -185,8 +185,9 @@ export class CamoufoxClient {
 				await assertSafeTarget(url, this.ssrfLookup ? { lookup: this.ssrfLookup } : {});
 			} catch (err) {
 				throw new CamoufoxErrorBox({
-					type: "config_invalid",
-					field: "url",
+					type: "ssrf_blocked",
+					hop: "initial",
+					url,
 					reason: sanitizeReason(err instanceof Error ? err.message : String(err)),
 				});
 			}
@@ -348,9 +349,10 @@ export class CamoufoxClient {
 				await assertSafeTarget(url, this.ssrfLookup ? { lookup: this.ssrfLookup } : {});
 			} catch (err) {
 				throw new CamoufoxErrorBox({
-					type: "config_invalid",
-					field: "url",
-					reason: err instanceof Error ? err.message : String(err),
+					type: "ssrf_blocked",
+					hop: "initial",
+					url,
+					reason: sanitizeReason(err instanceof Error ? err.message : String(err)),
 				});
 			}
 			const navOpts: {
