@@ -2,6 +2,42 @@ import type { Page } from "playwright-core";
 
 import type { RawResult, SearchEngineAdapter } from "../types.js";
 
+const CONSENT_HOST_RE = /(?:^|\.)consent\.google\.com$/i;
+
+const REJECT_SELECTORS = [
+	'button[jsname="tWT92d"]',
+	'button[aria-label*="Reject" i]',
+	'form[action*="consent"] button[type="submit"]:nth-of-type(1)',
+] as const;
+
+async function hasConsentForm(page: Page): Promise<boolean> {
+	try {
+		const host = new URL(page.url()).hostname;
+		if (CONSENT_HOST_RE.test(host)) return true;
+	} catch {
+		// unparseable URL — fall through to DOM check
+	}
+	const match = await page.$('form[action*="consent"]');
+	return match !== null;
+}
+
+async function dismissConsent(page: Page): Promise<"dismissed" | "skip" | "drift"> {
+	if (!(await hasConsentForm(page))) return "skip";
+	for (const sel of REJECT_SELECTORS) {
+		const handle = await page.$(sel);
+		if (handle) {
+			try {
+				await handle.click({ timeout: 2_000 });
+				return "dismissed";
+			} catch {
+				// selector found but click failed (e.g. element not interactable).
+				// Try next selector rather than giving up.
+			}
+		}
+	}
+	return "drift";
+}
+
 async function parseResults(page: Page, maxResults: number): Promise<RawResult[]> {
 	const raw = await page.$$eval(
 		"div#search div[data-sokoban-container]",
@@ -46,4 +82,5 @@ export const googleAdapter: SearchEngineAdapter = {
 	},
 	waitStrategy: { readyState: "domcontentloaded" },
 	parseResults,
+	dismissConsent,
 };
