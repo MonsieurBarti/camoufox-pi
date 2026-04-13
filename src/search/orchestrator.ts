@@ -79,18 +79,16 @@ export async function runSearch(
 		throwIfAborted(opts.signal);
 
 		const url = adapter.buildUrl(query);
-		if (opts.ssrfLookup) {
-			try {
-				await assertSafeTarget(url, { lookup: opts.ssrfLookup });
-			} catch (err) {
-				lastSignal = {
-					kind: "navigation_failed",
-					cause: sanitizeReason(err instanceof Error ? err.message : String(err)),
-				};
-				opts.context.markBlocked(lastSignal);
-				firstAdapter = false;
-				continue;
-			}
+		try {
+			await assertSafeTarget(url, opts.ssrfLookup ? { lookup: opts.ssrfLookup } : {});
+		} catch (err) {
+			lastSignal = {
+				kind: "navigation_failed",
+				cause: sanitizeReason(err instanceof Error ? err.message : String(err)),
+			};
+			opts.context.markBlocked(lastSignal);
+			firstAdapter = false;
+			continue;
 		}
 
 		let page: Page | null = null;

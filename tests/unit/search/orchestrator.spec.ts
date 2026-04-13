@@ -7,6 +7,7 @@ import type {
 	SearchEngineAdapter,
 	SearchEngineName,
 } from "../../../src/search/types.js";
+import type { LookupFn } from "../../../src/security/ssrf.js";
 
 type FakeAdapterOutcome =
 	| { kind: "results"; results: RawResult[] }
@@ -65,6 +66,8 @@ function makeFakeContext() {
 
 const newSignal = () => new AbortController().signal;
 
+const publicLookup = (async () => [{ address: "93.184.216.34", family: 4 }]) as unknown as LookupFn;
+
 describe("runSearch", () => {
 	it("auto: returns google results without fallback when google succeeds", async () => {
 		const google = fakeAdapter("google", {
@@ -82,6 +85,7 @@ describe("runSearch", () => {
 			adapters: [google, ddg],
 			context: ctx,
 			emitSearchEvent: emit,
+			ssrfLookup: publicLookup,
 		});
 
 		expect(out.engine).toBe("google");
@@ -111,6 +115,7 @@ describe("runSearch", () => {
 			adapters: [google, ddg],
 			context: ctx,
 			emitSearchEvent: emit,
+			ssrfLookup: publicLookup,
 		});
 
 		expect(out.engine).toBe("duckduckgo");
@@ -137,6 +142,7 @@ describe("runSearch", () => {
 			adapters: [google, ddg],
 			context: ctx,
 			emitSearchEvent: vi.fn(),
+			ssrfLookup: publicLookup,
 		});
 		expect(out.engine).toBe("duckduckgo");
 	});
@@ -155,6 +161,7 @@ describe("runSearch", () => {
 			adapters: [google, ddg],
 			context: ctx,
 			emitSearchEvent: vi.fn(),
+			ssrfLookup: publicLookup,
 		});
 		expect(out.engine).toBe("duckduckgo");
 		expect(state.markedBlocks[0]?.kind).toBe("empty_results");
@@ -180,6 +187,7 @@ describe("runSearch", () => {
 			adapters: [google, ddgNoDetect],
 			context: ctx,
 			emitSearchEvent: emit,
+			ssrfLookup: publicLookup,
 		});
 		expect(out.engine).toBe("duckduckgo");
 		expect(out.results).toEqual([]);
@@ -208,6 +216,7 @@ describe("runSearch", () => {
 				adapters: [google, ddgThrows],
 				context: ctx,
 				emitSearchEvent: vi.fn(),
+				ssrfLookup: publicLookup,
 			}),
 		).rejects.toMatchObject({
 			err: { type: "search_all_engines_blocked", lastSignal: "navigation_failed" },
@@ -231,6 +240,7 @@ describe("runSearch", () => {
 			adapters: [google, ddg],
 			context: ctx,
 			emitSearchEvent: vi.fn(),
+			ssrfLookup: publicLookup,
 		});
 		expect(out.engine).toBe("duckduckgo");
 		expect(state.acquireCalls).toBe(1);
@@ -252,8 +262,37 @@ describe("runSearch", () => {
 				adapters: [google],
 				context: ctx,
 				emitSearchEvent: vi.fn(),
+				ssrfLookup: publicLookup,
 			}),
 		).rejects.toMatchObject({ err: { type: "aborted" } });
+	});
+
+	it("pre-flight assertSafeTarget refuses adapter URLs resolving to private IPs", async () => {
+		const privateLookup = (async () => [{ address: "10.0.0.1", family: 4 }]) as unknown as LookupFn;
+		const google = fakeAdapter("google", {
+			kind: "results",
+			results: [{ title: "t", url: "https://x", snippet: "s", rank: 1 }],
+		});
+		const ddg = fakeAdapter("duckduckgo", {
+			kind: "results",
+			results: [{ title: "t", url: "https://y", snippet: "s", rank: 1 }],
+		});
+		const { ctx, state } = makeFakeContext();
+		await expect(
+			runSearch("q", {
+				maxResults: 10,
+				engine: "auto",
+				signal: newSignal(),
+				adapters: [google, ddg],
+				context: ctx,
+				emitSearchEvent: vi.fn(),
+				ssrfLookup: privateLookup,
+			}),
+		).rejects.toMatchObject({
+			err: { type: "search_all_engines_blocked", lastSignal: "navigation_failed" },
+		});
+		expect(state.markedBlocks).toHaveLength(2);
+		expect(state.markedBlocks[0]?.kind).toBe("navigation_failed");
 	});
 
 	it("unknown engine name → throws config_invalid", async () => {
@@ -267,6 +306,7 @@ describe("runSearch", () => {
 				adapters: [ddg], // only ddg
 				context: ctx,
 				emitSearchEvent: vi.fn(),
+				ssrfLookup: publicLookup,
 			}),
 		).rejects.toMatchObject({
 			err: { type: "config_invalid", field: "engine" },
