@@ -131,7 +131,7 @@ describe("tff-fetch_url tool", () => {
 		const tool = createFetchUrlTool(client);
 		const p = tool.execute("id", { url: "http://127.0.0.1/" }, new AbortController().signal);
 		await expect(p).rejects.toBeInstanceOf(CamoufoxErrorBox);
-		await expect(p).rejects.toMatchObject({ err: { type: "config_invalid", field: "url" } });
+		await expect(p).rejects.toMatchObject({ err: { type: "ssrf_blocked", hop: "initial" } });
 		await client.close();
 	});
 

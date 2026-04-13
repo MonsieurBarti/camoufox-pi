@@ -33,6 +33,36 @@ describe("CamoufoxErrorBox", () => {
 		// .err keeps full stderr
 		expect((box.err as { stderr: string }).stderr).toBe(long);
 	});
+
+	it("wraps ssrf_blocked and is throwable", () => {
+		const box = new CamoufoxErrorBox({
+			type: "ssrf_blocked",
+			hop: "redirect",
+			url: "http://169.254.169.254/latest/meta-data/",
+			reason: "resolves to private IPv4 169.254.169.254",
+		});
+		expect(box).toBeInstanceOf(Error);
+		expect(box.name).toBe("CamoufoxError");
+		expect(box.err).toEqual({
+			type: "ssrf_blocked",
+			hop: "redirect",
+			url: "http://169.254.169.254/latest/meta-data/",
+			reason: "resolves to private IPv4 169.254.169.254",
+		});
+		expect(box.message).toContain("ssrf_blocked");
+	});
+
+	it("ssrf_blocked message redacts URL query strings", () => {
+		const box = new CamoufoxErrorBox({
+			type: "ssrf_blocked",
+			hop: "redirect",
+			url: "http://10.0.0.1/admin?token=secret",
+			reason: "resolves to private IPv4 10.0.0.1",
+		});
+		expect(box.message).not.toContain("secret");
+		expect(box.message).toContain("http://10.0.0.1/admin");
+		expect((box.err as { url: string }).url).toBe("http://10.0.0.1/admin?token=secret");
+	});
 });
 
 describe("mapPlaywrightError", () => {

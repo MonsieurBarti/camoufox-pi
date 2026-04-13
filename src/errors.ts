@@ -14,7 +14,13 @@ export type CamoufoxError =
 	| { type: "browser_launch_failed"; stderr: string }
 	| { type: "playwright_disconnected" }
 	| { type: "aborted" }
-	| { type: "config_invalid"; field: string; reason: string };
+	| { type: "config_invalid"; field: string; reason: string }
+	| {
+			type: "ssrf_blocked";
+			hop: "initial" | "redirect" | "subframe" | "subresource";
+			url: string;
+			reason: string;
+	  };
 
 // Strip absolute/file-URL paths and truncate before embedding third-party
 // exception messages in config_invalid.reason. Prevents leaking node_modules

@@ -82,7 +82,7 @@ describe("CamoufoxClient.search", () => {
 		await client.ensureReady();
 		await expect(
 			client.search("test", { signal: new AbortController().signal }),
-		).rejects.toMatchObject({ err: { type: "config_invalid", field: "url" } });
+		).rejects.toMatchObject({ err: { type: "ssrf_blocked", hop: "initial" } });
 		await client.close();
 	});
 });
