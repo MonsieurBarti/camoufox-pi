@@ -36,8 +36,9 @@ export function sanitizeReason(msg: string, maxChars = 200): string {
 
 const UNIX_PATH_RE = /(?<![\w@])(?:\/(?:Users|home|root|var|tmp|opt)\/[^\s"'<>)]+)/g;
 const WIN_PATH_RE =
-	/(?:[A-Za-z]:\\(?:[^\\\s"']+\\)+[^\\\s"']+|\\\\[^\\\s"']+\\(?:[^\\\s"']+\\)*[^\\\s"']+)/g;
-const ENV_VAR_RE = /(?:\$\{[A-Z_][A-Z0-9_]*\}|\$[A-Z_][A-Z0-9_]*|%[A-Z_][A-Z0-9_]*%)/g;
+	/(?:[A-Za-z]:\\(?:[^\\"'<>|]+\\)+[^\\"'<>|\s]+|\\\\[^\\"'<>|]+\\(?:[^\\"'<>|]+\\)*[^\\"'<>|\s]+)/g;
+const ENV_VAR_RE =
+	/(?:\$\{[A-Za-z_][A-Za-z0-9_]*\}|\$[A-Za-z_][A-Za-z0-9_]*|%[A-Za-z_][A-Za-z0-9_]*%)/g;
 
 function redactSensitiveStrings(s: string): string {
 	return s
@@ -47,25 +48,25 @@ function redactSensitiveStrings(s: string): string {
 }
 
 function sanitizeForMessage(err: CamoufoxError): string {
-	// Cap stderr, redact URL query strings, and scrub sensitive strings
-	// (paths / env-var references) from any string field before serializing
-	// into .message (which can surface in logs / stack traces).
+	// Scrub sensitive strings first, then cap stderr, then strip URL query
+	// strings. Redacting before capping prevents the greedy path/env-var
+	// regexes from consuming the truncation marker at the cut boundary.
 	const redacted: Record<string, unknown> = { ...err };
+	for (const key of Object.keys(redacted)) {
+		const v = redacted[key];
+		if (typeof v === "string") {
+			redacted[key] = redactSensitiveStrings(v);
+		}
+	}
 	if (typeof redacted.stderr === "string" && redacted.stderr.length > 500) {
 		redacted.stderr = `${redacted.stderr.slice(0, 500)}…[${redacted.stderr.length} bytes]`;
 	}
 	if (typeof redacted.url === "string") {
 		try {
-			const u = new URL(redacted.url);
+			const u = new URL(redacted.url as string);
 			redacted.url = `${u.origin}${u.pathname}`;
 		} catch {
 			// leave as-is if unparseable
-		}
-	}
-	for (const key of Object.keys(redacted)) {
-		const v = redacted[key];
-		if (typeof v === "string") {
-			redacted[key] = redactSensitiveStrings(v);
 		}
 	}
 	try {

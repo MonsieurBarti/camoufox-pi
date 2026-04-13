@@ -74,6 +74,7 @@ describe("sanitizeForMessage (via CamoufoxErrorBox.message)", () => {
 		});
 		expect(box.message).toContain("http");
 		expect(box.message).toContain("502");
+		expect(box.message).toContain("example.com");
 	});
 
 	it("caps stderr length to 500 chars plus marker", () => {
@@ -81,5 +82,25 @@ describe("sanitizeForMessage (via CamoufoxErrorBox.message)", () => {
 		const box = new CamoufoxErrorBox({ type: "browser_launch_failed", stderr: long });
 		expect(box.message).toContain("…[1200 bytes]");
 		expect(box.message.length).toBeLessThan(900);
+	});
+
+	it("redacts Windows paths with spaces in directory names", () => {
+		const box = new CamoufoxErrorBox({
+			type: "browser_launch_failed",
+			stderr: "stat C:\\Users\\John Doe\\AppData\\Local\\x failed",
+		});
+		expect(box.message).not.toContain("John Doe");
+		expect(box.message).not.toContain("AppData");
+	});
+
+	it("redacts lowercase and mixed-case env-var references", () => {
+		const box = new CamoufoxErrorBox({
+			type: "browser_launch_failed",
+			stderr: "from $home or ${xdg_config_home} or %AppData% or %path%",
+		});
+		expect(box.message).not.toContain("$home");
+		expect(box.message).not.toContain("${xdg_config_home}");
+		expect(box.message).not.toContain("%AppData%");
+		expect(box.message).not.toContain("%path%");
 	});
 });
