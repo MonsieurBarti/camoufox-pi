@@ -84,7 +84,7 @@ Then reload PI with `/reload` (or restart it). First tool call downloads the Cam
 
 | Tool | Description | Key parameters |
 |---|---|---|
-| `tff-fetch_url` | Fetch a URL via stealth Firefox, return HTML/markdown with optional selector/screenshot | `url`, `timeout_ms`, `max_bytes`, `isolate`, `render_mode`, `selector`, `format`, `screenshot` |
+| `tff-fetch_url` | Fetch a URL via stealth Firefox, return HTML/markdown with optional selector/screenshot | `url`, `timeout_ms`, `max_bytes`, `isolate`, `render_mode`, `wait_for_selector`, `selector`, `format`, `screenshot` |
 | `tff-search_web` | Web search (DuckDuckGo) | `query`, `max_results`, `timeout_ms`, `isolate` |
 
 **`tff-fetch_url` parameters:**
@@ -173,7 +173,7 @@ Active probe (`{ probe: true }`) adds `probe: { ok, roundTripMs, error }` by ope
 |---|---|---|
 | `browser_launch` | `{ spanId, browserVersion, durationMs }` | Launch completes successfully |
 | `binary_download_progress` | `{ bytesDownloaded, bytesTotal }` | camoufox-js downloads the binary (first launch only) |
-| `fetch_url` | `{ spanId, url, finalUrl, status, bytes, truncated, isolate, durationMs }` | `fetchUrl()` resolves |
+| `fetch_url` | `{ spanId, url, finalUrl, status, bytes, truncated, isolate, durationMs, renderMode, usedWaitForSelector, usedSelector, format, screenshotBytes }` | `fetchUrl()` resolves |
 | `search` | `{ spanId, engine, query, maxResults, resultCount, atLimit, durationMs }` | `search()` resolves |
 | `error` | `{ spanId, op, error: CamoufoxError }` | Any op throws — fired BEFORE `throw` |
 
@@ -232,6 +232,7 @@ Key components in `src/`:
 | `src/index.ts` | Extension factory — session lifecycle, tool/command/hook registration |
 | `src/services/camoufox-service.ts` | Singleton service owning the `CamoufoxClient`, kicks off `ensureReady()` from `session_start` |
 | `src/client/camoufox-client.ts` | Lifecycle + `navigate` + `fetchUrl` + `search` + `close` |
+| `src/client/fetch-pipeline.ts` | `fetchUrl` helpers — wait-strategy, selector waits, DOM slicing, HTML→markdown, screenshot capture, opts validator |
 | `src/client/launcher.ts` | `Launcher` interface + `RealLauncher` (sole `camoufox-js` importer) |
 | `src/client/signal.ts` | `combineSignals(external, timeoutMs)` — turn-signal + timeout composition |
 | `src/errors.ts` | `CamoufoxError` discriminated union + `CamoufoxErrorBox` + `mapPlaywrightError` |
