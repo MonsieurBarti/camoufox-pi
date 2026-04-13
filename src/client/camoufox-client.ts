@@ -299,8 +299,10 @@ export class CamoufoxClient {
 			};
 			if (opts.isolate !== undefined) navOpts.isolate = opts.isolate;
 			const { page, response, cleanup } = await this.navigate(url, navOpts);
+			let currentPhase: "nav" | "wait_for_selector" | "screenshot" = "nav";
 			try {
 				if (opts.waitForSelector !== undefined) {
+					currentPhase = "wait_for_selector";
 					const remaining = Math.max(
 						0,
 						(opts.timeoutMs ?? this.config.timeoutMs) - (Date.now() - started),
@@ -310,6 +312,7 @@ export class CamoufoxClient {
 				const SCREENSHOT_MAX_BYTES = 10 * 1024 * 1024;
 				let screenshotResult: ScreenshotResult | undefined;
 				if (opts.screenshot !== undefined) {
+					currentPhase = "screenshot";
 					screenshotResult = await capturePageScreenshot(page, opts.screenshot);
 					if (screenshotResult.bytes > SCREENSHOT_MAX_BYTES) {
 						throw new CamoufoxErrorBox({
@@ -319,6 +322,7 @@ export class CamoufoxClient {
 						});
 					}
 				}
+				currentPhase = "nav";
 				const { html: rawHtml } = await extractSlice(page, opts.selector);
 				const finalUrl = response.url();
 				let body: string;
@@ -386,7 +390,13 @@ export class CamoufoxClient {
 					throw new CamoufoxErrorBox({ type: "aborted" });
 				}
 				if (err instanceof CamoufoxErrorBox) throw err;
-				throw err;
+				const mapped = mapPlaywrightError(err, {
+					url: response.url(),
+					phase: currentPhase,
+					elapsedMs: Date.now() - started,
+					signal: opts.signal,
+				});
+				throw new CamoufoxErrorBox(mapped);
 			} finally {
 				cleanup();
 				await page.close().catch(() => undefined);

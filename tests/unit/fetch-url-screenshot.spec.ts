@@ -114,4 +114,27 @@ describe("CamoufoxClient.fetchUrl screenshot", () => {
 		expect(captured).toMatchObject({ screenshotBytes: 5 });
 		await client.close();
 	});
+
+	it("maps raw Playwright TimeoutError from screenshot to timeout with phase: screenshot", async () => {
+		const pwTimeout = Object.assign(new Error("Timeout 30000ms exceeded"), {
+			name: "TimeoutError",
+		});
+		const launcher = makeFakeLauncher({
+			pageBehavior: () => ({
+				status: 200,
+				html: "<html></html>",
+				finalUrl: "https://x.test/",
+				screenshotBytes: pwTimeout,
+			}),
+		});
+		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
+		const p = client.fetchUrl("https://x.test/", {
+			signal: new AbortController().signal,
+			screenshot: {},
+		});
+		await expect(p).rejects.toMatchObject({
+			err: { type: "timeout", phase: "screenshot" },
+		});
+		await client.close();
+	});
 });
