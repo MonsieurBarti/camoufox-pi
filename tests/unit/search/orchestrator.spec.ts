@@ -295,6 +295,42 @@ describe("runSearch", () => {
 		expect(state.markedBlocks[0]?.kind).toBe("navigation_failed");
 	});
 
+	it("aborts mid-loop: aborting from inside the first adapter's parse aborts before second adapter starts", async () => {
+		const ac = new AbortController();
+		// First adapter aborts the signal during parseResults, then returns 0 results
+		// (which would normally trigger empty_results → fall back).
+		const google: SearchEngineAdapter = {
+			name: "google",
+			buildUrl: (q) => `https://google.test/?q=${q}`,
+			waitStrategy: { readyState: "domcontentloaded" },
+			async parseResults() {
+				ac.abort();
+				return [];
+			},
+			async detectBlock() {
+				return null;
+			},
+		};
+		const ddg = fakeAdapter("duckduckgo", {
+			kind: "results",
+			results: [{ title: "should-not-reach", url: "https://x", snippet: "s", rank: 1 }],
+		});
+		const { ctx, state } = makeFakeContext();
+		await expect(
+			runSearch("q", {
+				maxResults: 10,
+				engine: "auto",
+				signal: ac.signal,
+				adapters: [google, ddg],
+				context: ctx,
+				emitSearchEvent: vi.fn(),
+				ssrfLookup: publicLookup,
+			}),
+		).rejects.toMatchObject({ err: { type: "aborted" } });
+		// Confirm only google was attempted; ddg never acquired.
+		expect(state.acquireCalls).toBe(1);
+	});
+
 	it("unknown engine name → throws config_invalid", async () => {
 		const ddg = fakeAdapter("duckduckgo", { kind: "results", results: [] });
 		const { ctx } = makeFakeContext();

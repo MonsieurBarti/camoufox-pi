@@ -108,7 +108,7 @@ export async function runSearch(
 				guard.assertNotBlocked();
 				lastSignal = {
 					kind: "navigation_failed",
-					cause: err instanceof Error ? err.message : String(err),
+					cause: sanitizeReason(err instanceof Error ? err.message : String(err)),
 				};
 				opts.context.markBlocked(lastSignal);
 				firstAdapter = false;
