@@ -339,12 +339,21 @@ export class CamoufoxClient {
 			signal: AbortSignal;
 			maxResults?: number;
 			timeoutMs?: number;
-			isolate?: boolean;
 			engine?: SearchEngineChoice;
 		},
 	): Promise<{ results: RawResult[]; engine: SearchEngineName; query: string }> {
 		const spanId = newSpanId();
 		try {
+			// Defensive runtime guard: callers bypassing TypeScript may still set isolate.
+			// Per-call isolation is no longer supported; SearchContext recycles automatically.
+			if ((opts as { isolate?: boolean }).isolate === true) {
+				throw new CamoufoxErrorBox({
+					type: "config_invalid",
+					field: "isolate",
+					reason:
+						"per-call isolate is no longer supported; SearchContext recycles automatically on block or every 50 queries",
+				});
+			}
 			await this.ensureReady(opts.signal);
 			const maxResults = opts.maxResults ?? 10;
 			if (!Number.isInteger(maxResults) || maxResults < 1 || maxResults > 50) {

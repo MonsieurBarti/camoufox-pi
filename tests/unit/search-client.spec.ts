@@ -86,6 +86,21 @@ describe("CamoufoxClient.search", () => {
 		await client.close();
 	});
 
+	it("rejects isolate=true with config_invalid (per-call isolation no longer supported)", async () => {
+		const launcher = makeFakeLauncher();
+		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
+		const opts = {
+			signal: new AbortController().signal,
+			isolate: true,
+		};
+		// biome-ignore lint/suspicious/noExplicitAny: deliberately bypass type to test runtime guard
+		const p = client.search("x", opts as any);
+		await expect(p).rejects.toMatchObject({
+			err: { type: "config_invalid", field: "isolate" },
+		});
+		await client.close();
+	});
+
 	it("rejects search URL that resolves to a private IP (SSRF)", async () => {
 		const privateLookup = (async () => [{ address: "10.0.0.1", family: 4 }]) as unknown as LookupFn;
 		const launcher = makeFakeLauncher();
