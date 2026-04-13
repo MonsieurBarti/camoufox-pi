@@ -104,3 +104,14 @@ describe("sanitizeForMessage (via CamoufoxErrorBox.message)", () => {
 		expect(box.message).not.toContain("%path%");
 	});
 });
+
+describe("search_all_engines_blocked error variant", () => {
+	it("serializes with lastSignal", () => {
+		const box = new CamoufoxErrorBox({
+			type: "search_all_engines_blocked",
+			lastSignal: "sorry_interstitial",
+		});
+		expect(box.message).toContain("search_all_engines_blocked");
+		expect(box.message).toContain("sorry_interstitial");
+	});
+});

@@ -20,6 +20,15 @@ export type CamoufoxError =
 			hop: "initial" | "redirect" | "subframe" | "subresource";
 			url: string;
 			reason: string;
+	  }
+	| {
+			type: "search_all_engines_blocked";
+			lastSignal:
+				| "http_status"
+				| "sorry_interstitial"
+				| "consent_drift"
+				| "empty_results"
+				| "navigation_failed";
 	  };
 
 // Strip absolute/file-URL paths and truncate before embedding third-party
