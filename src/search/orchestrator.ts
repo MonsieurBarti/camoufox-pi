@@ -82,13 +82,12 @@ export async function runSearch(
 		try {
 			await assertSafeTarget(url, opts.ssrfLookup ? { lookup: opts.ssrfLookup } : {});
 		} catch (err) {
-			lastSignal = {
-				kind: "navigation_failed",
-				cause: sanitizeReason(err instanceof Error ? err.message : String(err)),
-			};
-			opts.context.markBlocked(lastSignal);
-			firstAdapter = false;
-			continue;
+			throw new CamoufoxErrorBox({
+				type: "ssrf_blocked",
+				hop: "initial",
+				url,
+				reason: sanitizeReason(err instanceof Error ? err.message : String(err)),
+			});
 		}
 
 		let page: Page | null = null;

@@ -20,7 +20,10 @@ describe("CamoufoxClient.search", () => {
 			}),
 		});
 		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
-		const res = await client.search("foo", { signal: new AbortController().signal });
+		const res = await client.search("foo", {
+			signal: new AbortController().signal,
+			engine: "duckduckgo",
+		});
 		expect(res.engine).toBe("duckduckgo");
 		expect(res.query).toBe("foo");
 		expect(res.results).toEqual([
@@ -38,7 +41,10 @@ describe("CamoufoxClient.search", () => {
 			}),
 		});
 		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
-		const res = await client.search("nothing", { signal: new AbortController().signal });
+		const res = await client.search("nothing", {
+			signal: new AbortController().signal,
+			engine: "duckduckgo",
+		});
 		expect(res.results).toEqual([]);
 		await client.close();
 	});
@@ -49,6 +55,7 @@ describe("CamoufoxClient.search", () => {
 		const p = client.search("x", {
 			signal: new AbortController().signal,
 			maxResults: 0,
+			engine: "duckduckgo",
 		});
 		await expect(p).rejects.toMatchObject({
 			err: { type: "config_invalid", field: "maxResults" },
@@ -70,7 +77,11 @@ describe("CamoufoxClient.search", () => {
 			}),
 		});
 		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
-		const res = await client.search("x", { signal: new AbortController().signal, maxResults: 2 });
+		const res = await client.search("x", {
+			signal: new AbortController().signal,
+			maxResults: 2,
+			engine: "duckduckgo",
+		});
 		expect(res.results.length).toBe(2);
 		await client.close();
 	});

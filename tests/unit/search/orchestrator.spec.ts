@@ -267,7 +267,7 @@ describe("runSearch", () => {
 		).rejects.toMatchObject({ err: { type: "aborted" } });
 	});
 
-	it("pre-flight assertSafeTarget refuses adapter URLs resolving to private IPs", async () => {
+	it("pre-flight assertSafeTarget refuses adapter URLs resolving to private IPs (hard fail, no fallback)", async () => {
 		const privateLookup = (async () => [{ address: "10.0.0.1", family: 4 }]) as unknown as LookupFn;
 		const google = fakeAdapter("google", {
 			kind: "results",
@@ -289,10 +289,11 @@ describe("runSearch", () => {
 				ssrfLookup: privateLookup,
 			}),
 		).rejects.toMatchObject({
-			err: { type: "search_all_engines_blocked", lastSignal: "navigation_failed" },
+			err: { type: "ssrf_blocked", hop: "initial" },
 		});
-		expect(state.markedBlocks).toHaveLength(2);
-		expect(state.markedBlocks[0]?.kind).toBe("navigation_failed");
+		// No fallback occurred — neither adapter acquired.
+		expect(state.acquireCalls).toBe(0);
+		expect(state.markedBlocks).toEqual([]);
 	});
 
 	it("aborts mid-loop: aborting from inside the first adapter's parse aborts before second adapter starts", async () => {

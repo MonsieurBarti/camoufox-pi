@@ -2,7 +2,10 @@ import type { Browser, BrowserContext, Page } from "playwright-core";
 
 import { CamoufoxErrorBox, mapPlaywrightError, sanitizeReason } from "../errors.js";
 import { duckduckgoAdapter } from "../search/adapters/duckduckgo.js";
-import type { RawResult } from "../search/types.js";
+import { googleAdapter } from "../search/adapters/google.js";
+import { runSearch } from "../search/orchestrator.js";
+import { type SearchContext, createSearchContext } from "../search/search-context.js";
+import type { RawResult, SearchEngineChoice, SearchEngineName } from "../search/types.js";
 import { type SsrfGuard, attachSsrfGuard } from "../security/redirect-guard.js";
 import { type LookupFn, assertSafeTarget } from "../security/ssrf.js";
 import type { CamoufoxConfig } from "../types.js";
@@ -68,6 +71,7 @@ export class CamoufoxClient {
 	readonly config: CamoufoxConfig;
 	private readonly ssrfLookup: LookupFn | undefined;
 	private state: ReadyState = { status: "idle" };
+	private searchContext: SearchContext | null = null;
 
 	constructor(opts: CamoufoxClientOptions) {
 		this.launcher = opts.launcher;
@@ -319,6 +323,16 @@ export class CamoufoxClient {
 		}
 	}
 
+	private getOrCreateSearchContext(): SearchContext {
+		if (this.searchContext === null) {
+			this.searchContext = createSearchContext(
+				() => this.getBrowser(),
+				this.ssrfLookup ? { ssrfLookup: this.ssrfLookup } : {},
+			);
+		}
+		return this.searchContext;
+	}
+
 	async search(
 		query: string,
 		opts: {
@@ -326,10 +340,10 @@ export class CamoufoxClient {
 			maxResults?: number;
 			timeoutMs?: number;
 			isolate?: boolean;
+			engine?: SearchEngineChoice;
 		},
-	): Promise<{ results: RawResult[]; engine: "duckduckgo"; query: string }> {
+	): Promise<{ results: RawResult[]; engine: SearchEngineName; query: string }> {
 		const spanId = newSpanId();
-		const started = Date.now();
 		try {
 			await this.ensureReady(opts.signal);
 			const maxResults = opts.maxResults ?? 10;
@@ -350,66 +364,19 @@ export class CamoufoxClient {
 					reason: `must be integer in [1000, 120000], got ${opts.timeoutMs}`,
 				});
 			}
-			const adapter = duckduckgoAdapter;
-			const url = adapter.buildUrl(query);
-			try {
-				await assertSafeTarget(url, this.ssrfLookup ? { lookup: this.ssrfLookup } : {});
-			} catch (err) {
-				throw new CamoufoxErrorBox({
-					type: "ssrf_blocked",
-					hop: "initial",
-					url,
-					reason: sanitizeReason(err instanceof Error ? err.message : String(err)),
-				});
-			}
-			const navOpts: {
-				signal: AbortSignal;
-				timeoutMs: number;
-				waitUntil: "load" | "domcontentloaded" | "networkidle";
-				isolate?: boolean;
-			} = {
+			const engine: SearchEngineChoice = opts.engine ?? "auto";
+			const context = this.getOrCreateSearchContext();
+			const out = await runSearch(query, {
+				maxResults,
+				engine,
 				signal: opts.signal,
+				adapters: [googleAdapter, duckduckgoAdapter],
+				context,
+				emitSearchEvent: (payload) => this.events.emit("search", { spanId, ...payload }),
 				timeoutMs: opts.timeoutMs ?? this.config.timeoutMs,
-				waitUntil: adapter.waitStrategy.readyState,
-			};
-			if (opts.isolate !== undefined) navOpts.isolate = opts.isolate;
-			const { page, cleanup, guard } = await this.navigate(url, navOpts);
-			const searchStarted = Date.now();
-			try {
-				const results = await adapter.parseResults(page, maxResults);
-				guard.assertNotBlocked();
-				this.events.emit("search", {
-					spanId,
-					engine: "duckduckgo",
-					query,
-					maxResults,
-					durationMs: Date.now() - started,
-					resultCount: results.length,
-					atLimit: results.length === maxResults,
-				});
-				return { results, engine: "duckduckgo", query };
-			} catch (err) {
-				// See fetchUrl: guard-recorded block takes precedence over any
-				// pipeline error to preserve the security-signal visibility.
-				guard.assertNotBlocked();
-				if (opts.signal.aborted) {
-					throw new CamoufoxErrorBox({ type: "aborted" });
-				}
-				if (err instanceof CamoufoxErrorBox) throw err;
-				// Parity with fetchUrl: classify Playwright pipeline errors via
-				// mapPlaywrightError so search surfaces network/timeout/aborted
-				// consistently instead of a bare rethrow.
-				const mapped = mapPlaywrightError(err, {
-					url,
-					phase: "nav",
-					elapsedMs: Date.now() - searchStarted,
-					signal: opts.signal,
-				});
-				throw new CamoufoxErrorBox(mapped);
-			} finally {
-				cleanup();
-				await page.close().catch(() => undefined);
-			}
+				...(this.ssrfLookup ? { ssrfLookup: this.ssrfLookup } : {}),
+			});
+			return out;
 		} catch (err) {
 			this.emitError(spanId, "search", err);
 			throw err;
@@ -498,7 +465,12 @@ export class CamoufoxClient {
 
 	async close(): Promise<void> {
 		const browser = this.state.browser;
+		const sc = this.searchContext;
+		this.searchContext = null;
 		this.state = { status: "closed" };
+		if (sc) {
+			await sc.recycle().catch(() => undefined);
+		}
 		if (browser) {
 			try {
 				await browser.close();
