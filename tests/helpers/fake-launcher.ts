@@ -7,6 +7,63 @@ import type { Browser, BrowserContext, Page, Response } from "playwright-core";
 import type { BinaryDownloadProgressEvent } from "../../src/client/events.js";
 import type { LaunchedBrowser, Launcher } from "../../src/client/launcher.js";
 
+export interface FakeRequest {
+	url(): string;
+	resourceType(): string;
+	frame(): unknown;
+	isNavigationRequest(): boolean;
+	redirectedFrom(): FakeRequest | null;
+}
+
+export interface FakeRouteCallRecord {
+	continued: number;
+	aborted: Array<string | undefined>;
+}
+
+export interface FakeRoute {
+	continue(): Promise<void>;
+	abort(errorCode?: string): Promise<void>;
+	readonly calls: FakeRouteCallRecord;
+}
+
+export function makeFakeRoute(): FakeRoute {
+	const calls: FakeRouteCallRecord = { continued: 0, aborted: [] };
+	return {
+		async continue() {
+			calls.continued += 1;
+		},
+		async abort(errorCode?: string) {
+			calls.aborted.push(errorCode);
+		},
+		calls,
+	};
+}
+
+export function makeFakeRequest(opts: {
+	url: string;
+	resourceType?: string;
+	mainFrame?: boolean;
+	isNavigation?: boolean;
+	redirectedFrom?: FakeRequest | null;
+	framesMap?: { mainFrame: unknown };
+}): FakeRequest {
+	const fallbackMain = { __isMain: true };
+	const mainFrameRef = opts.framesMap?.mainFrame ?? fallbackMain;
+	const frameRef = opts.mainFrame === false ? { __isMain: false } : mainFrameRef;
+	return {
+		url: () => opts.url,
+		resourceType: () => opts.resourceType ?? "document",
+		frame: () => frameRef,
+		isNavigationRequest: () => opts.isNavigation ?? true,
+		redirectedFrom: () => opts.redirectedFrom ?? null,
+	};
+}
+
+export function getFakeMainFrame(page: unknown): unknown {
+	const p = page as { mainFrame?: () => unknown };
+	return p.mainFrame?.();
+}
+
 export interface FakePageResponse {
 	status?: number;
 	finalUrl?: string;
@@ -76,6 +133,9 @@ export function makeFakeLauncher(
 		controls.pagesOpened += 1;
 		let closed = false;
 		let currentUrl = "";
+		const routeHandlers: Array<(route: FakeRoute, request: FakeRequest) => void | Promise<void>> =
+			[];
+		const mainFrameObj = { __isMain: true };
 		const page = {
 			async goto(
 				url: string,
@@ -204,6 +264,33 @@ export function makeFakeLauncher(
 				// so the dimension cap passes in ordinary tests.
 				const dims = behavior.documentDimensions ?? { width: 1024, height: 768 };
 				return dims as unknown as T;
+			},
+			async route(
+				pattern: string,
+				handler: (route: FakeRoute, request: FakeRequest) => void | Promise<void>,
+			): Promise<void> {
+				void pattern;
+				routeHandlers.push(handler);
+			},
+			async unroute(
+				pattern: string,
+				handler?: (route: FakeRoute, request: FakeRequest) => void | Promise<void>,
+			): Promise<void> {
+				void pattern;
+				if (!handler) {
+					routeHandlers.length = 0;
+					return;
+				}
+				const idx = routeHandlers.indexOf(handler);
+				if (idx >= 0) routeHandlers.splice(idx, 1);
+			},
+			mainFrame() {
+				return mainFrameObj;
+			},
+			async __fireRequest(req: FakeRequest, route: FakeRoute): Promise<void> {
+				for (const h of routeHandlers) {
+					await h(route, req);
+				}
 			},
 			async close(): Promise<void> {
 				if (!closed) {
