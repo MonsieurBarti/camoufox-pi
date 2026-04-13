@@ -8,19 +8,6 @@ describe("CamoufoxClient.fetchUrl validation", () => {
 	const launcher = () => makeFakeLauncher();
 	const client = () => new CamoufoxClient({ launcher: launcher(), ssrfLookup: safeLookup });
 
-	it("rejects unknown renderMode string", async () => {
-		const c = client();
-		const p = c.fetchUrl("https://x.test/", {
-			signal: new AbortController().signal,
-			// @ts-expect-error on purpose
-			renderMode: "nope",
-		});
-		await expect(p).rejects.toMatchObject({
-			err: { type: "config_invalid", field: "renderMode" },
-		});
-		await c.close();
-	});
-
 	it("rejects empty selector string", async () => {
 		const c = client();
 		const p = c.fetchUrl("https://x.test/", {

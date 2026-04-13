@@ -3,11 +3,20 @@ import { describe, expect, it } from "vitest";
 
 import { capturePageScreenshot } from "../../src/client/fetch-pipeline.js";
 
-function makeStubPage(buf: Buffer, captureOpts: { last?: unknown } = {}): Page {
+interface StubControls {
+	last?: unknown;
+	dimensions?: { width: number; height: number };
+}
+
+function makeStubPage(buf: Buffer, captureOpts: StubControls = {}): Page {
 	return {
 		async screenshot(opts: unknown): Promise<Buffer> {
 			captureOpts.last = opts;
 			return buf;
+		},
+		async evaluate<T>(): Promise<T> {
+			// Default small dimensions so full_page doesn't hit the cap.
+			return (captureOpts.dimensions ?? { width: 1024, height: 768 }) as unknown as T;
 		},
 	} as unknown as Page;
 }

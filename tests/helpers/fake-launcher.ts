@@ -32,6 +32,8 @@ export interface FakePageResponse {
 	waitForSelectorDelayMs?: number;
 	/** Bytes returned by page.screenshot(); pass an Error to throw. */
 	screenshotBytes?: Buffer | Error;
+	/** Value returned by page.evaluate() for the scroll-dimensions probe. */
+	documentDimensions?: { width: number; height: number };
 }
 
 export interface FakeControls {
@@ -193,6 +195,15 @@ export function makeFakeLauncher(
 				const behavior = pageBehavior(currentUrl);
 				if (behavior.screenshotBytes instanceof Error) throw behavior.screenshotBytes;
 				return behavior.screenshotBytes ?? Buffer.from("fake-png");
+			},
+			async evaluate<T>(_fn: () => T): Promise<T> {
+				const behavior = pageBehavior(currentUrl);
+				// The only page.evaluate() call in production today is the
+				// scroll-dimensions probe for full_page screenshots. Return
+				// the configured dimensions (defaults to a small viewport)
+				// so the dimension cap passes in ordinary tests.
+				const dims = behavior.documentDimensions ?? { width: 1024, height: 768 };
+				return dims as unknown as T;
 			},
 			async close(): Promise<void> {
 				if (!closed) {

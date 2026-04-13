@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
-import { htmlToMarkdown } from "../../src/client/fetch-pipeline.js";
+import TurndownService from "turndown";
+import { describe, expect, it, vi } from "vitest";
+
+import { MAX_MARKDOWN_INPUT_BYTES, htmlToMarkdown } from "../../src/client/fetch-pipeline.js";
 
 const BASE = "https://example.test/docs/";
 
@@ -94,5 +96,26 @@ describe("htmlToMarkdown", () => {
 	it("preserves query strings when absolutizing", () => {
 		const md = htmlToMarkdown('<a href="/x?y=1&z=2">L</a>', BASE);
 		expect(md).toContain("[L](https://example.test/x?y=1&z=2)");
+	});
+
+	it("truncates input exceeding MAX_MARKDOWN_INPUT_BYTES before passing to turndown", () => {
+		// Verify via a turndown spy so we don't have to run the real parser on
+		// a 16+ MiB blob (slow). The spy captures the truncated string handed
+		// to turndown and the test asserts its byte length stays under the cap.
+		let receivedByteLength = -1;
+		const spy = vi
+			.spyOn(TurndownService.prototype, "turndown")
+			.mockImplementation((input: string): string => {
+				receivedByteLength = Buffer.byteLength(input, "utf8");
+				return "mock-md";
+			});
+		try {
+			const huge = "x".repeat(MAX_MARKDOWN_INPUT_BYTES + 100);
+			htmlToMarkdown(huge, BASE);
+			expect(receivedByteLength).toBeGreaterThan(0);
+			expect(receivedByteLength).toBeLessThanOrEqual(MAX_MARKDOWN_INPUT_BYTES);
+		} finally {
+			spy.mockRestore();
+		}
 	});
 });

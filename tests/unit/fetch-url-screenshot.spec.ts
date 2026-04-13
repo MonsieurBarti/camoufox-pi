@@ -115,6 +115,52 @@ describe("CamoufoxClient.fetchUrl screenshot", () => {
 		await client.close();
 	});
 
+	it("rejects full_page capture when document dimensions exceed caps", async () => {
+		const launcher = makeFakeLauncher({
+			pageBehavior: () => ({
+				status: 200,
+				html: "<html></html>",
+				finalUrl: "https://x.test/",
+				documentDimensions: { width: 2000, height: 40_000 }, // total > 50M pixels? 80M — yes
+				screenshotBytes: Buffer.from("unused"),
+			}),
+		});
+		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
+		const p = client.fetchUrl("https://x.test/", {
+			signal: new AbortController().signal,
+			screenshot: { fullPage: true },
+		});
+		await expect(p).rejects.toMatchObject({
+			err: {
+				type: "config_invalid",
+				field: "screenshot",
+				reason: expect.stringContaining("exceed caps"),
+			},
+		});
+		await client.close();
+	});
+
+	it("rejects full_page capture when a single axis exceeds cap", async () => {
+		const launcher = makeFakeLauncher({
+			pageBehavior: () => ({
+				status: 200,
+				html: "<html></html>",
+				finalUrl: "https://x.test/",
+				documentDimensions: { width: 20_000, height: 500 },
+				screenshotBytes: Buffer.from("unused"),
+			}),
+		});
+		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
+		const p = client.fetchUrl("https://x.test/", {
+			signal: new AbortController().signal,
+			screenshot: { fullPage: true },
+		});
+		await expect(p).rejects.toMatchObject({
+			err: { type: "config_invalid", field: "screenshot" },
+		});
+		await client.close();
+	});
+
 	it("maps raw Playwright TimeoutError from screenshot to timeout with phase: screenshot", async () => {
 		const pwTimeout = Object.assign(new Error("Timeout 30000ms exceeded"), {
 			name: "TimeoutError",

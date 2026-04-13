@@ -49,4 +49,37 @@ describe("extractSlice", () => {
 			err: { type: "config_invalid", field: "selector", reason: "no element matched" },
 		});
 	});
+
+	it("throws config_invalid with sanitized reason when CSS syntax is invalid", async () => {
+		const page = {
+			async content(): Promise<string> {
+				return "<html></html>";
+			},
+			locator(_sel: string) {
+				return {
+					first() {
+						return {
+							async count(): Promise<number> {
+								throw new Error(
+									"Unknown engine 'bogus' while parsing selector at /Users/alice/node_modules/playwright-core/lib/selectors.js:42",
+								);
+							},
+							async evaluate<T>(): Promise<T> {
+								throw new Error("unreachable");
+							},
+						};
+					},
+				};
+			},
+		} as unknown as Page;
+		const p = extractSlice(page, "::bogus");
+		await expect(p).rejects.toBeInstanceOf(CamoufoxErrorBox);
+		await expect(p).rejects.toMatchObject({
+			err: { type: "config_invalid", field: "selector" },
+		});
+		// Path should be sanitized out of the reason.
+		await expect(p).rejects.toMatchObject({
+			err: { reason: expect.not.stringContaining("/Users/alice") },
+		});
+	});
 });

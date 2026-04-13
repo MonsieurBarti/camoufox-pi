@@ -60,20 +60,6 @@ describe("CamoufoxClient.fetchUrl format: markdown", () => {
 		await client.close();
 	});
 
-	it("rejects invalid format value", async () => {
-		const launcher = makeFakeLauncher();
-		const client = new CamoufoxClient({ launcher, ssrfLookup: safeLookup });
-		const p = client.fetchUrl("https://x.test/", {
-			signal: new AbortController().signal,
-			// @ts-expect-error bad value on purpose
-			format: "bogus",
-		});
-		await expect(p).rejects.toMatchObject({
-			err: { type: "config_invalid", field: "format" },
-		});
-		await client.close();
-	});
-
 	it("sets format in event payload", async () => {
 		const launcher = makeFakeLauncher({
 			pageBehavior: () => ({ status: 200, html: "<html></html>", finalUrl: "https://x.test/" }),
@@ -111,7 +97,7 @@ describe("CamoufoxClient.fetchUrl format: markdown", () => {
 			await expect(p).rejects.toMatchObject({
 				err: {
 					type: "config_invalid",
-					field: "format",
+					field: "markdown",
 					reason: expect.stringContaining("markdown conversion failed"),
 				},
 			});

@@ -1,6 +1,6 @@
 import type { Browser, BrowserContext, Page } from "playwright-core";
 
-import { CamoufoxErrorBox, mapPlaywrightError } from "../errors.js";
+import { CamoufoxErrorBox, mapPlaywrightError, sanitizeReason } from "../errors.js";
 import { duckduckgoAdapter } from "../search/adapters/duckduckgo.js";
 import type { RawResult } from "../search/types.js";
 import { type LookupFn, assertSafeTarget } from "../security/ssrf.js";
@@ -17,12 +17,14 @@ import {
 import {
 	type Format,
 	type RenderMode,
+	SCREENSHOT_MAX_BYTES,
 	type ScreenshotOpts,
 	type ScreenshotResult,
 	capturePageScreenshot,
 	extractSlice,
 	htmlToMarkdown,
 	resolveWaitUntil,
+	validateFetchUrlOpts,
 	waitForSelectorOrThrow,
 } from "./fetch-pipeline.js";
 import type { Launcher } from "./launcher.js";
@@ -178,113 +180,14 @@ export class CamoufoxClient {
 		const started = Date.now();
 		try {
 			await this.ensureReady(opts.signal);
-			if (
-				opts.timeoutMs !== undefined &&
-				(!Number.isInteger(opts.timeoutMs) || opts.timeoutMs < 1_000 || opts.timeoutMs > 120_000)
-			) {
-				throw new CamoufoxErrorBox({
-					type: "config_invalid",
-					field: "timeoutMs",
-					reason: `must be integer in [1000, 120000], got ${opts.timeoutMs}`,
-				});
-			}
-			if (
-				opts.maxBytes !== undefined &&
-				(!Number.isInteger(opts.maxBytes) || opts.maxBytes < 1_024 || opts.maxBytes > 52_428_800)
-			) {
-				throw new CamoufoxErrorBox({
-					type: "config_invalid",
-					field: "maxBytes",
-					reason: `must be integer in [1024, 52428800], got ${opts.maxBytes}`,
-				});
-			}
-			if (
-				opts.renderMode !== undefined &&
-				opts.renderMode !== "static" &&
-				opts.renderMode !== "render" &&
-				opts.renderMode !== "render-and-wait"
-			) {
-				throw new CamoufoxErrorBox({
-					type: "config_invalid",
-					field: "renderMode",
-					reason: `must be one of static|render|render-and-wait, got ${String(opts.renderMode)}`,
-				});
-			}
-			const renderMode: RenderMode = opts.renderMode ?? "render";
-			if (opts.waitForSelector !== undefined && renderMode !== "render-and-wait") {
-				throw new CamoufoxErrorBox({
-					type: "config_invalid",
-					field: "waitForSelector",
-					reason: "only valid with renderMode: render-and-wait",
-				});
-			}
-			if (
-				opts.waitForSelector !== undefined &&
-				(typeof opts.waitForSelector !== "string" || opts.waitForSelector.length === 0)
-			) {
-				throw new CamoufoxErrorBox({
-					type: "config_invalid",
-					field: "waitForSelector",
-					reason: "must be a non-empty string",
-				});
-			}
-			if (opts.selector !== undefined) {
-				if (typeof opts.selector !== "string" || opts.selector.length === 0) {
-					throw new CamoufoxErrorBox({
-						type: "config_invalid",
-						field: "selector",
-						reason: "must be a non-empty string",
-					});
-				}
-				if (opts.selector.length > 512) {
-					throw new CamoufoxErrorBox({
-						type: "config_invalid",
-						field: "selector",
-						reason: "exceeds 512-char cap",
-					});
-				}
-			}
-			const format: Format = opts.format ?? "html";
-			if (format !== "html" && format !== "markdown") {
-				throw new CamoufoxErrorBox({
-					type: "config_invalid",
-					field: "format",
-					reason: `must be html or markdown, got ${String(format)}`,
-				});
-			}
-			if (opts.screenshot !== undefined) {
-				const s = opts.screenshot;
-				if (s.format !== undefined && s.format !== "png" && s.format !== "jpeg") {
-					throw new CamoufoxErrorBox({
-						type: "config_invalid",
-						field: "screenshot.format",
-						reason: `must be png or jpeg, got ${String(s.format)}`,
-					});
-				}
-				if (s.quality !== undefined) {
-					if ((s.format ?? "png") !== "jpeg") {
-						throw new CamoufoxErrorBox({
-							type: "config_invalid",
-							field: "screenshot.quality",
-							reason: "only valid when format: jpeg",
-						});
-					}
-					if (!Number.isInteger(s.quality) || s.quality < 1 || s.quality > 100) {
-						throw new CamoufoxErrorBox({
-							type: "config_invalid",
-							field: "screenshot.quality",
-							reason: `must be integer in [1, 100], got ${s.quality}`,
-						});
-					}
-				}
-			}
+			const { renderMode, format } = validateFetchUrlOpts(opts);
 			try {
 				await assertSafeTarget(url, this.ssrfLookup ? { lookup: this.ssrfLookup } : {});
 			} catch (err) {
 				throw new CamoufoxErrorBox({
 					type: "config_invalid",
 					field: "url",
-					reason: err instanceof Error ? err.message : String(err),
+					reason: sanitizeReason(err instanceof Error ? err.message : String(err)),
 				});
 			}
 			const navOpts: {
@@ -299,7 +202,7 @@ export class CamoufoxClient {
 			};
 			if (opts.isolate !== undefined) navOpts.isolate = opts.isolate;
 			const { page, response, cleanup } = await this.navigate(url, navOpts);
-			let currentPhase: "nav" | "wait_for_selector" | "screenshot" = "nav";
+			let currentPhase: "nav" | "wait_for_selector" | "screenshot" | "extract" = "nav";
 			try {
 				if (opts.waitForSelector !== undefined) {
 					currentPhase = "wait_for_selector";
@@ -309,7 +212,6 @@ export class CamoufoxClient {
 					);
 					await waitForSelectorOrThrow(page, opts.waitForSelector, remaining);
 				}
-				const SCREENSHOT_MAX_BYTES = 10 * 1024 * 1024;
 				let screenshotResult: ScreenshotResult | undefined;
 				if (opts.screenshot !== undefined) {
 					currentPhase = "screenshot";
@@ -322,7 +224,7 @@ export class CamoufoxClient {
 						});
 					}
 				}
-				currentPhase = "nav";
+				currentPhase = "extract";
 				const { html: rawHtml } = await extractSlice(page, opts.selector);
 				const finalUrl = response.url();
 				let body: string;
@@ -332,8 +234,10 @@ export class CamoufoxClient {
 					} catch (err) {
 						throw new CamoufoxErrorBox({
 							type: "config_invalid",
-							field: "format",
-							reason: `markdown conversion failed: ${err instanceof Error ? err.message : String(err)}`,
+							field: "markdown",
+							reason: sanitizeReason(
+								`markdown conversion failed: ${err instanceof Error ? err.message : String(err)}`,
+							),
 						});
 					}
 				} else {
