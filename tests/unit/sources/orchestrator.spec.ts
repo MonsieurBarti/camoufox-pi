@@ -160,14 +160,16 @@ describe("fetchSources orchestrator", () => {
 
 	it("propagates abort into adapter contexts", async () => {
 		const aborted = vi.fn();
+		const controller = new AbortController();
 		const a = fakeAdapter({
-			fetch: async (_q, opts) => {
+			async fetch(_q, opts) {
 				opts.signal?.addEventListener("abort", aborted);
+				controller.abort();
+				// Give the event loop a tick so the listener fires before return.
+				await new Promise((r) => setTimeout(r, 0));
 				return [];
 			},
 		});
-		const controller = new AbortController();
-		controller.abort();
 		await fetchSources("q", {
 			sources: ["reddit"],
 			lookbackDays: 30,

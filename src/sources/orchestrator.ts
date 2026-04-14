@@ -117,7 +117,7 @@ async function runOneSource(
 		const fetchOpts = {
 			lookbackDays: opts.lookbackDays,
 			limit: opts.perSourceLimit,
-			...(opts.signal !== undefined ? { signal: makeDerivedSignal(opts.signal) } : {}),
+			...(opts.signal !== undefined ? { signal: opts.signal } : {}),
 		};
 
 		const items = await adapter.fetch(query, fetchOpts, ctx);
@@ -150,45 +150,4 @@ async function runOneSource(
 		});
 		throw err;
 	}
-}
-
-/**
- * Returns a derived AbortSignal that mirrors the parent. When the parent is
- * already aborted, calling addEventListener("abort", …) on the derived signal
- * will fire the listener synchronously — closing the gap that exists in some
- * runtimes (e.g. Bun) where registering a listener on an already-aborted
- * signal never fires the event.
- */
-function makeDerivedSignal(parent: AbortSignal): AbortSignal {
-	if (!parent.aborted) {
-		// Fast path: parent is live — AbortSignal.any handles forwarding.
-		return AbortSignal.any([parent]);
-	}
-	// Slow path: already aborted. Wrap with a Proxy so addEventListener fires
-	// the callback immediately when the signal is already aborted.
-	const controller = new AbortController();
-	controller.abort(parent.reason);
-	const signal = controller.signal;
-	return new Proxy(signal, {
-		get(target, prop) {
-			if (prop === "addEventListener") {
-				return (
-					type: string,
-					listener: ((...args: unknown[]) => void) | { handleEvent: (...args: unknown[]) => void },
-					options?: unknown,
-				) => {
-					if (type === "abort") {
-						const cb =
-							typeof listener === "function" ? listener : listener.handleEvent.bind(listener);
-						// Fire immediately since the signal is already aborted.
-						cb(new Event("abort"));
-						return;
-					}
-					return (target.addEventListener as (...a: unknown[]) => void)(type, listener, options);
-				};
-			}
-			const val = Reflect.get(target, prop, target);
-			return typeof val === "function" ? val.bind(target) : val;
-		},
-	});
 }
