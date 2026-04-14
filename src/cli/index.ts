@@ -47,7 +47,6 @@ export async function runCli(argv: readonly string[], deps: RunCliDeps): Promise
 
 // Allow invocation as `node dist/cli/index.js setup`.
 if (import.meta.url === `file://${process.argv[1]}`) {
-	// @ts-expect-error — setup.ts lands in Task 16
 	const { registerSetupHandlers } = await import("./setup.js");
 	const handlers = registerSetupHandlers() as Partial<Record<string, CliHandler>>;
 	runCli(process.argv.slice(2), { handlers, log: (l) => console.log(l) }).then(
