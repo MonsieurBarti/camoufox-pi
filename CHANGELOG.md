@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.2.2](https://github.com/MonsieurBarti/camoufox-pi/compare/camoufox-pi-v0.2.1...camoufox-pi-v0.2.2) (2026-04-14)
+
+
+### Features
+
+* **client:** add fetchsources method and source/credential wiring ([b48d9ae](https://github.com/MonsieurBarti/camoufox-pi/commit/b48d9aea6666b3e4360ef2d8af9ee5a82e9943b9))
+* **client:** add httpfetch primitive with ssrf guard ([4deb2ec](https://github.com/MonsieurBarti/camoufox-pi/commit/4deb2ecd67a4d1faaa6f276dc325dc8a0946eff2))
+* **client:** httpfetch manual redirect, maxbytes, timeout ([a80995c](https://github.com/MonsieurBarti/camoufox-pi/commit/a80995c052ae28f9ff0c559333b2d01126552fb7))
+* **cli:** setup subcommand with audit and interactive fix loop ([5da434e](https://github.com/MonsieurBarti/camoufox-pi/commit/5da434ecef418bb317dec04a02e47d91d97abc84))
+* **cli:** subcommand dispatcher scaffold ([e3d40a4](https://github.com/MonsieurBarti/camoufox-pi/commit/e3d40a48755256686d434ced3926facec390b396))
+* **credentials:** backend interface and fake test helper ([ce4866f](https://github.com/MonsieurBarti/camoufox-pi/commit/ce4866f99b1b9da4a7fe4993a093b938ace72524))
+* **credentials:** napi-rs keyring backend with in-memory adapter for tests ([ce1580a](https://github.com/MonsieurBarti/camoufox-pi/commit/ce1580a34c3e769d6474aa60384eaf00a8538c02))
+* **credentials:** scoped credentialreader per adapter ([0048887](https://github.com/MonsieurBarti/camoufox-pi/commit/00488874c435a10eb41b0b809955b560b7275c85))
+* **errors:** add source and credential error variants ([a5deb8d](https://github.com/MonsieurBarti/camoufox-pi/commit/a5deb8dd06150339c35549ba2b2f9e421bd3b16f))
+* **events:** add source_fetch and http_fetch events ([0d29b65](https://github.com/MonsieurBarti/camoufox-pi/commit/0d29b65a5178f34c70cea7a535d17f66a702040a))
+* fetch-sources — multi-source scraping, credentials, CLI setup (milestone 5) ([7551ee0](https://github.com/MonsieurBarti/camoufox-pi/commit/7551ee01fc3de8a71ab7c8e0ed7c697a18df8e0b))
+* **pkg:** public exports, camoufox-pi bin, pi skill wrapper ([c0e0206](https://github.com/MonsieurBarti/camoufox-pi/commit/c0e02066e9076519543a22041e41eef817776b4e))
+* **sources:** add sourceadapter interface and adaptercontext ([86f1594](https://github.com/MonsieurBarti/camoufox-pi/commit/86f159468b3f6bc4607a5a1773109c920869d844))
+* **sources:** add sourceitem type and sortbypublisheddesc ([b5f37ae](https://github.com/MonsieurBarti/camoufox-pi/commit/b5f37aed6f9c590dc528dd756335d1c8b8078273))
+* **sources:** fetchsources orchestrator with partial-success semantics ([97e2dd1](https://github.com/MonsieurBarti/camoufox-pi/commit/97e2dd170d8d975da447a60167ee8b8234609b6a))
+* **sources:** reddit adapter with fixture-based parser ([a20f8b3](https://github.com/MonsieurBarti/camoufox-pi/commit/a20f8b37c5187d06a43ad6ca0a4951e146ec4d2d))
+* **tools:** add tff-fetch_sources tool ([f7680d0](https://github.com/MonsieurBarti/camoufox-pi/commit/f7680d06d0492938dd209624f61c93b258227956))
+
+
+### Bug Fixes
+
+* **cli:** explain when setup runs with no registered adapters ([7c43009](https://github.com/MonsieurBarti/camoufox-pi/commit/7c43009b0bb5d4f3ad6fc562041410f22d4e2aad))
+* **errors:** redact nested errors in all_sources_failed ([3df58fa](https://github.com/MonsieurBarti/camoufox-pi/commit/3df58fa2b67da28505d130b4e46860c6b555fa81))
+* **http-fetch:** downgrade method and body on 303 and post-to-301/302 ([b718c2a](https://github.com/MonsieurBarti/camoufox-pi/commit/b718c2a0d62c1183b4ab2eae453b908965e13034))
+* **pkg:** relocate pi skill to tracked skills dir ([39574bb](https://github.com/MonsieurBarti/camoufox-pi/commit/39574bb5e1726578a354cf091a743f930e879a35))
+* **sources:** collapse reddit error branches and add missing tests ([96aec06](https://github.com/MonsieurBarti/camoufox-pi/commit/96aec0631d883a60278910f77071836633b5adf4))
+* **sources:** remove abortsignal proxy, rewrite abort test ([ad1f05c](https://github.com/MonsieurBarti/camoufox-pi/commit/ad1f05cfa4d08143a9c9d5909b25dd60e5548a3d))
+
 ## [0.2.1](https://github.com/MonsieurBarti/camoufox-pi/compare/camoufox-pi-v0.2.0...camoufox-pi-v0.2.1) (2026-04-13)
 
 
