@@ -48,6 +48,13 @@ function buildInjectedClient(opts: RunBirdSearchOpts): InstanceType<typeof Searc
 				headers: resp.headers,
 			});
 		}
+
+		// SECURITY: the vendored refreshQueryIds() calls runtimeQueryIds.refresh()
+		// which uses globalThis.fetch directly, bypassing our SSRF-guarded httpFetch.
+		// Baked-in QUERY_IDS are sufficient; refuse to refresh dynamically.
+		async refreshQueryIds(): Promise<void> {
+			return;
+		}
 	}
 	// eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call
 	return new InjectedSearchClient({

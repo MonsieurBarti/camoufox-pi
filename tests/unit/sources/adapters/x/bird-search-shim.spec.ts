@@ -87,4 +87,30 @@ describe("runBirdSearch", () => {
 		);
 		expect(globalThis.fetch).toBe(before);
 	});
+
+	it("never calls globalThis.fetch (SSRF/cookie leak prevention)", async () => {
+		const original = globalThis.fetch;
+		let calls = 0;
+		globalThis.fetch = ((...args: unknown[]) => {
+			calls += 1;
+			return original.apply(globalThis, args as Parameters<typeof fetch>);
+		}) as typeof fetch;
+		try {
+			// A 404 response is the condition under which the vendored client would
+			// call refreshQueryIds() (via withRefreshedQueryIdsOn404) in production.
+			// Our override must intercept that path and keep calls at zero.
+			const httpFetch = createFakeHttpFetch({ "*": { status: 404, headers: {}, body: "" } });
+			await catchErr(
+				runBirdSearch({
+					query: "q",
+					limit: 5,
+					cookies: { auth_token: "A", ct0: "C" },
+					httpFetch,
+				}),
+			);
+			expect(calls).toBe(0);
+		} finally {
+			globalThis.fetch = original;
+		}
+	});
 });
