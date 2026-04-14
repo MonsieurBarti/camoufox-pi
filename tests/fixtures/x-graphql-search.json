@@ -1,0 +1,29 @@
+[
+	{
+		"id": "1700000000000000000",
+		"created_at": "2026-04-01T12:00:00.000Z",
+		"full_text": "Rust async really clicks when you stop fighting pin.",
+		"user": { "screen_name": "rustacean", "name": "Rusty" },
+		"favorite_count": 42,
+		"reply_count": 3,
+		"retweet_count": 7
+	},
+	{
+		"id": "1700000000000000001",
+		"created_at": "2026-03-10T09:30:00.000Z",
+		"full_text": "old tweet — outside lookback window",
+		"user": { "screen_name": "oldposter", "name": null },
+		"favorite_count": 1,
+		"reply_count": 0,
+		"retweet_count": 0
+	},
+	{
+		"id": "1700000000000000002",
+		"created_at": "2026-04-10T01:00:00.000Z",
+		"full_text": "",
+		"user": null,
+		"favorite_count": 0,
+		"reply_count": 0,
+		"retweet_count": 0
+	}
+]
