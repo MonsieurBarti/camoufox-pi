@@ -1,0 +1,159 @@
+// @ts-ignore — vendor JS, no declaration file
+import { TwitterClientBase } from "../../../../vendor/bird-search/lib/twitter-client-base.js";
+// @ts-ignore — vendor JS, no declaration file
+import { withSearch } from "../../../../vendor/bird-search/lib/twitter-client-search.js";
+import type { HttpFetch } from "../../../client/http-fetch.js";
+import { CamoufoxErrorBox } from "../../../errors.js";
+import type { BirdSearchRow } from "./graphql-to-source-item.js";
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const SearchClient = withSearch(TwitterClientBase);
+
+export interface RunBirdSearchOpts {
+	readonly query: string;
+	readonly limit: number;
+	readonly cookies: { auth_token: string; ct0: string };
+	readonly httpFetch: HttpFetch;
+	readonly signal?: AbortSignal;
+}
+
+interface FetchInit {
+	method?: string;
+	headers?: Record<string, string>;
+	body?: string;
+}
+
+// Module-scoped subclass so the class definition is created once.
+// The constructor accepts per-call dependencies (httpFetch, signal) so each
+// instance is self-contained — no shared state, no monkey-patch, no concurrency leak.
+class InjectedSearchClient extends SearchClient {
+	private readonly injectedHttpFetch: HttpFetch;
+	private readonly injectedSignal: AbortSignal | undefined;
+
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	constructor(
+		config: {
+			cookies: { authToken: string; ct0: string; cookieHeader: string };
+			timeoutMs: number;
+		},
+		injection: { httpFetch: HttpFetch; signal?: AbortSignal },
+	) {
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-call
+		super(config);
+		this.injectedHttpFetch = injection.httpFetch;
+		this.injectedSignal = injection.signal;
+	}
+
+	async fetchWithTimeout(url: string, init: FetchInit = {}): Promise<Response> {
+		const method = (init.method as "GET" | "POST" | undefined) ?? "GET";
+		const resp = await this.injectedHttpFetch(url, {
+			method,
+			...(init.headers !== undefined ? { headers: init.headers } : {}),
+			...(typeof init.body === "string" ? { body: init.body } : {}),
+			...(this.injectedSignal !== undefined ? { signal: this.injectedSignal } : {}),
+		});
+		// Guard against status 0: the fetch spec forbids constructing a Response
+		// with status 0, and some network-layer errors surface this way.
+		if (resp.status === 0) {
+			throw new Error("invalid response: status 0");
+		}
+		return new Response(resp.body, {
+			status: resp.status,
+			headers: resp.headers,
+		});
+	}
+
+	// SECURITY: the vendored refreshQueryIds() calls runtimeQueryIds.refresh()
+	// which uses globalThis.fetch directly, bypassing our SSRF-guarded httpFetch.
+	// Baked-in QUERY_IDS are sufficient; refuse to refresh dynamically.
+	async refreshQueryIds(): Promise<void> {
+		return;
+	}
+}
+
+export async function runBirdSearch(opts: RunBirdSearchOpts): Promise<BirdSearchRow[]> {
+	if (opts.signal?.aborted) {
+		const err = new Error("aborted");
+		err.name = "AbortError";
+		throw err;
+	}
+	// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
+	const client: InstanceType<typeof SearchClient> = new InjectedSearchClient(
+		{
+			cookies: {
+				authToken: opts.cookies.auth_token,
+				ct0: opts.cookies.ct0,
+				cookieHeader: `auth_token=${opts.cookies.auth_token}; ct0=${opts.cookies.ct0}`,
+			},
+			timeoutMs: 30_000,
+		},
+		{
+			httpFetch: opts.httpFetch,
+			...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+		},
+	);
+	try {
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+		const result = await client.search(opts.query, opts.limit);
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+		if (result.success) {
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+			return result.tweets as BirdSearchRow[];
+		}
+		// Classify the error. bird-search reports errors as strings like "HTTP 401: ...", "HTTP 429: ...", etc.
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+		throw classifyBirdSearchError((result.error as string | undefined) ?? "unknown error");
+	} catch (err) {
+		if (err instanceof CamoufoxErrorBox) throw err;
+		if (err instanceof Error && err.name === "AbortError") throw err;
+		throw new CamoufoxErrorBox({
+			type: "source_unavailable",
+			source: "x",
+			cause: err instanceof Error ? err.message : String(err),
+		});
+	}
+}
+
+const AUTH_KEYWORDS = /auth|not authenticated|bad session|session expired|not authorized/i;
+
+export function classifyBirdSearchError(message: string): CamoufoxErrorBox {
+	const httpMatch = /^HTTP (\d{3})(?::\s*(.*))?$/.exec(message);
+	if (httpMatch) {
+		const status = Number(httpMatch[1]);
+		if (status === 401 || status === 403) {
+			return new CamoufoxErrorBox({
+				type: "session_expired",
+				source: "x",
+				credentialKey: "cookies",
+			});
+		}
+		if (status === 429) {
+			const retrySec = parseRetryAfter(httpMatch[2] ?? "");
+			return new CamoufoxErrorBox({
+				type: "source_rate_limited",
+				source: "x",
+				...(retrySec !== undefined ? { retryAfterSec: retrySec } : {}),
+			});
+		}
+		if (status >= 500 && status <= 599) {
+			return new CamoufoxErrorBox({
+				type: "source_unavailable",
+				source: "x",
+				cause: `HTTP ${status}`,
+			});
+		}
+	}
+	if (AUTH_KEYWORDS.test(message)) {
+		return new CamoufoxErrorBox({ type: "session_expired", source: "x", credentialKey: "cookies" });
+	}
+	return new CamoufoxErrorBox({ type: "source_unavailable", source: "x", cause: message });
+}
+
+function parseRetryAfter(tail: string): number | undefined {
+	const m = /retry[- ]after[:= ]*(\d+)/i.exec(tail);
+	if (m?.[1]) {
+		const n = Number(m[1]);
+		return Number.isFinite(n) ? n : undefined;
+	}
+	return undefined;
+}

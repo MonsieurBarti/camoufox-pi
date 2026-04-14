@@ -14,7 +14,8 @@ Usage:
 
 Commands:
   setup              Audit and configure source credentials
-  setup --check      Audit only, nonzero exit if any credential missing
+  setup --check              Audit only, nonzero exit if any credential missing
+  setup --refresh <source>   Re-capture cookie_jar credentials for a source
 
 Options:
   --help             Show this message`;
@@ -26,7 +27,30 @@ export async function runCli(argv: readonly string[], deps: RunCliDeps): Promise
 	}
 	const [cmd, ...rest] = argv;
 	if (cmd === "setup") {
-		if (rest.includes("--check")) {
+		const hasCheck = rest.includes("--check");
+		const refreshIdx = rest.indexOf("--refresh");
+		const hasRefresh = refreshIdx >= 0;
+
+		if (hasCheck && hasRefresh) {
+			deps.log("--check and --refresh are mutually exclusive");
+			return 2;
+		}
+
+		if (hasRefresh) {
+			const source = rest[refreshIdx + 1];
+			if (!source || source.startsWith("--")) {
+				deps.log("--refresh requires a source argument");
+				return 2;
+			}
+			const handler = deps.handlers[`setup:refresh:${source}`];
+			if (!handler) {
+				deps.log(`unknown source: ${source}`);
+				return 2;
+			}
+			return handler();
+		}
+
+		if (hasCheck) {
 			const handler = deps.handlers["setup:check"];
 			if (!handler) {
 				deps.log("setup:check not wired");
@@ -34,6 +58,7 @@ export async function runCli(argv: readonly string[], deps: RunCliDeps): Promise
 			}
 			return handler();
 		}
+
 		const handler = deps.handlers.setup;
 		if (!handler) {
 			deps.log("setup not wired");

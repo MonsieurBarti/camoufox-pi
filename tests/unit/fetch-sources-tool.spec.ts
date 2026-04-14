@@ -1,15 +1,19 @@
 import { describe, expect, it } from "vitest";
 
 import type { CamoufoxClient } from "../../src/client/camoufox-client.js";
+import type { CamoufoxError } from "../../src/errors.js";
 import type { SourceItem } from "../../src/sources/source-item.js";
 import { createFetchSourcesTool } from "../../src/tools/fetch-sources.js";
 
-const fakeClient = (items: SourceItem[]) =>
+const fakeClient = (
+	items: SourceItem[],
+	errors?: Array<{ source: string; error: CamoufoxError }>,
+) =>
 	({
 		async fetchSources() {
 			return {
 				items,
-				errors: [],
+				errors: errors ?? [],
 				stats: [
 					{
 						source: "reddit",
@@ -51,5 +55,31 @@ describe("tff-fetch_sources tool", () => {
 		const tool = createFetchSourcesTool(fakeClient([]));
 		const { Value } = await import("@sinclair/typebox/value");
 		expect(Value.Check(tool.parameters, { query: "q", sources: [] })).toBe(false);
+	});
+
+	it("includes formatted error messages for session_expired errors", async () => {
+		const sessionExpiredError: CamoufoxError = {
+			type: "session_expired",
+			source: "x",
+			credentialKey: "cookies",
+		};
+		const tool = createFetchSourcesTool(
+			fakeClient([], [{ source: "x", error: sessionExpiredError }]),
+		);
+		const result = await tool.execute(
+			"tc-1",
+			{ query: "test", sources: ["x"] },
+			new AbortController().signal,
+		);
+		const errors = result.details.errors as Array<{
+			source: string;
+			type: string;
+			message: string;
+		}>;
+		expect(errors).toHaveLength(1);
+		const errorMsg = errors[0]?.message;
+		expect(errorMsg).toBeDefined();
+		expect(errorMsg).toMatch(/x session/i);
+		expect(errorMsg).toMatch(/setup --refresh x/);
 	});
 });

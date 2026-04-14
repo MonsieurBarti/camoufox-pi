@@ -262,3 +262,17 @@ describe("source error variants", () => {
 		expect((box.err as { retryAfterSec?: number }).retryAfterSec).toBeUndefined();
 	});
 });
+
+describe("session_expired error variant", () => {
+	it("round-trips through CamoufoxErrorBox with source and credentialKey visible", () => {
+		const box = new CamoufoxErrorBox({
+			type: "session_expired",
+			source: "x",
+			credentialKey: "cookies",
+		});
+		expect(box.err.type).toBe("session_expired");
+		expect(box.message).toContain("session_expired");
+		expect(box.message).toContain('"source":"x"');
+		expect(box.message).toContain('"credentialKey":"cookies"');
+	});
+});

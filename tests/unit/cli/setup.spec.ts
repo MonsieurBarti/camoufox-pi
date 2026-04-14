@@ -4,6 +4,7 @@ import { runSetup } from "../../../src/cli/setup.js";
 import { redditAdapter } from "../../../src/sources/adapters/reddit.js";
 import type { SourceAdapter } from "../../../src/sources/types.js";
 import { createFakeCredentialBackend } from "../../helpers/fake-credential-backend.js";
+import { makeFakeLauncher } from "../../helpers/fake-launcher.js";
 
 describe("runSetup audit", () => {
 	it("exits 0 when all sources are fully configured", async () => {
@@ -12,6 +13,7 @@ describe("runSetup audit", () => {
 			mode: "full",
 			adapters: [redditAdapter()],
 			backend: createFakeCredentialBackend(),
+			launcher: makeFakeLauncher({}),
 			log: (l) => {
 				logs.push(l);
 			},
@@ -42,6 +44,7 @@ describe("runSetup audit", () => {
 			mode: "check",
 			adapters: [fakeAdapter],
 			backend: createFakeCredentialBackend(),
+			launcher: makeFakeLauncher({}),
 			log: (l) => {
 				logs.push(l);
 			},
@@ -72,6 +75,7 @@ describe("runSetup audit", () => {
 			mode: "full",
 			adapters: [fakeAdapter],
 			backend,
+			launcher: makeFakeLauncher({}),
 			log: (l) => {
 				logs.push(l);
 			},
@@ -83,42 +87,13 @@ describe("runSetup audit", () => {
 		expect(exit).toBe(0);
 	});
 
-	it("cookie_jar in milestone 5 prints 'not yet implemented' and skips", async () => {
-		const logs: string[] = [];
-		const backend = createFakeCredentialBackend();
-		const fakeAdapter: SourceAdapter = {
-			name: "cookie-src",
-			tier: 2,
-			requiredCredentials: [
-				{
-					kind: "cookie_jar",
-					key: "cookies",
-					description: "Login cookies",
-					loginUrl: "https://site.test/login",
-				},
-			],
-			fetch: async () => [],
-		};
-		const exit = await runSetup({
-			mode: "full",
-			adapters: [fakeAdapter],
-			backend,
-			log: (l) => {
-				logs.push(l);
-			},
-			promptLine: async () => "",
-			promptSecret: async () => "",
-		});
-		expect(logs.join("\n")).toContain("not yet implemented");
-		expect(exit).not.toBe(0);
-	});
-
 	it("prints an explanatory message and exits 0 when no adapters are registered", async () => {
 		const logs: string[] = [];
 		const exit = await runSetup({
 			mode: "full",
 			adapters: [],
 			backend: createFakeCredentialBackend(),
+			launcher: makeFakeLauncher({}),
 			log: (l) => {
 				logs.push(l);
 			},
@@ -127,5 +102,60 @@ describe("runSetup audit", () => {
 		});
 		expect(exit).toBe(0);
 		expect(logs.join("\n")).toContain("No source adapters are registered");
+	});
+});
+
+describe("runSetup cookie_jar handling", () => {
+	it("captures and stores cookie_jar credentials via the launcher", async () => {
+		const adapters = [
+			{
+				name: "x",
+				tier: 2 as const,
+				requiredCredentials: [
+					{
+						kind: "cookie_jar" as const,
+						key: "cookies",
+						description: "X session cookies",
+						loginUrl: "https://x.com/login",
+					},
+				],
+				fetch: async () => [],
+			},
+		];
+		const backend = createFakeCredentialBackend();
+		const logs: string[] = [];
+
+		const launcher = makeFakeLauncher({
+			storageState: {
+				cookies: [
+					{
+						name: "auth_token",
+						value: "aaa",
+						domain: ".x.com",
+						path: "/",
+						expires: -1,
+						httpOnly: true,
+						secure: true,
+						sameSite: "Lax",
+					},
+				],
+				origins: [],
+			},
+		});
+
+		const code = await runSetup({
+			mode: "full",
+			adapters,
+			backend,
+			launcher,
+			log: (l) => logs.push(l),
+			promptLine: async () => "",
+			promptSecret: async () => "",
+		});
+
+		expect(code).toBe(0);
+		const stored = await backend.get("camoufox-pi:x:cookies");
+		expect(stored).not.toBeNull();
+		expect(JSON.parse(stored as string).cookies[0].name).toBe("auth_token");
 	});
 });

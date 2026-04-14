@@ -34,6 +34,24 @@ export interface CreateHttpFetchOptions {
 const DEFAULT_MAX_BYTES = 2 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 30_000;
 
+const SENSITIVE_HEADERS = new Set(["authorization", "cookie", "x-csrf-token"]);
+
+function stripSensitiveHeaders(
+	headers: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+	if (!headers) return headers;
+	const out: Record<string, string> = {};
+	let stripped = false;
+	for (const [k, v] of Object.entries(headers)) {
+		if (SENSITIVE_HEADERS.has(k.toLowerCase())) {
+			stripped = true;
+			continue;
+		}
+		out[k] = v;
+	}
+	return stripped ? out : headers;
+}
+
 export function createHttpFetch(opts: CreateHttpFetchOptions): HttpFetch {
 	const fetchImpl = opts.fetchImpl ?? fetch;
 	const MAX_REDIRECTS = 10;
@@ -68,8 +86,6 @@ export function createHttpFetch(opts: CreateHttpFetchOptions): HttpFetch {
 						reason: err instanceof Error ? err.message : String(err),
 					});
 				}
-				// TODO(SEC): strip Authorization + Cookie headers on cross-origin redirect
-				// before any adapter starts sending auth via httpFetch.
 				const res = await fetchImpl(currentUrl, {
 					method: effectiveInit.method ?? "GET",
 					...(effectiveInit.headers !== undefined ? { headers: effectiveInit.headers } : {}),
@@ -85,6 +101,18 @@ export function createHttpFetch(opts: CreateHttpFetchOptions): HttpFetch {
 						return finalize(res, body, currentUrl, opts, url, start);
 					}
 					const next = new URL(loc, currentUrl).toString();
+					const prevOrigin = new URL(currentUrl).origin;
+					const nextOrigin = new URL(next).origin;
+					if (prevOrigin !== nextOrigin) {
+						// SEC: cross-origin redirect — strip auth-bearing headers to prevent
+						// credential leakage to the target origin.
+						effectiveInit = {
+							...effectiveInit,
+							...(effectiveInit.headers !== undefined
+								? { headers: stripSensitiveHeaders(effectiveInit.headers) ?? {} }
+								: {}),
+						};
+					}
 					// RFC 7231 §6.4.4: 303 always downgrades to GET with no body.
 					// 301/302 de-facto downgrade POST→GET per all major browsers.
 					if (
