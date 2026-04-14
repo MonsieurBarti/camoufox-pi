@@ -53,6 +53,15 @@ describe("milestone-2 public API exports", () => {
 	});
 });
 
+describe("milestone 5 exports", () => {
+	it("exports redditAdapter factory", async () => {
+		const mod = await import("../../src/index.js");
+		expect(typeof mod.redditAdapter).toBe("function");
+		const adapter = mod.redditAdapter();
+		expect(adapter.name).toBe("reddit");
+	});
+});
+
 describe("wrapTool boundary", () => {
 	it("throws CamoufoxErrorBox on invalid input and threads the signal on valid", async () => {
 		const schema = Type.Object({ url: Type.String({ format: "uri" }) });

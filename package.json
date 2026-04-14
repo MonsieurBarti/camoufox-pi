@@ -11,6 +11,9 @@
 			"import": "./dist/index.js"
 		}
 	},
+	"bin": {
+		"camoufox-pi": "./dist/cli/index.js"
+	},
 	"files": [
 		"dist",
 		"README.md",
