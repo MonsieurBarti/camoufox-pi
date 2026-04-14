@@ -10,6 +10,8 @@ export interface CredentialSpec {
 	/** URL the user visits to acquire this credential. For cookie_jar this is the site's login URL. */
 	readonly obtainUrl?: string;
 	readonly loginUrl?: string;
+	/** For cookie_jar: pattern to detect when user is logged in. Auto-completes capture upon match. */
+	readonly loggedInUrlPattern?: RegExp;
 }
 
 export function makeNamespacedKey(source: string, key: string): string {
