@@ -25,5 +25,12 @@
 		"createdAt": "Fri Apr 10 01:00:00 +0000 2026",
 		"author": { "username": "empty", "name": "Empty" },
 		"authorId": "3"
+	},
+	{
+		"id": "1700000000000000003",
+		"text": "from a deleted account",
+		"createdAt": "Fri Apr 12 10:00:00 +0000 2026",
+		"author": null,
+		"authorId": "4"
 	}
 ]

@@ -7,18 +7,19 @@ export interface BirdSearchRow {
 	replyCount?: number;
 	retweetCount?: number;
 	likeCount?: number;
-	author: { username: string; name: string };
+	author: { username: string; name: string } | null | undefined;
 	authorId?: string;
 }
 
 export function toSourceItem(row: BirdSearchRow): SourceItem {
+	const username = row.author?.username;
 	return {
 		source: "x",
 		id: row.id,
-		url: `https://x.com/${row.author.username}/status/${row.id}`,
+		url: `https://x.com/${username ?? "i"}/status/${row.id}`,
 		title: null,
 		text: row.text,
-		author: row.author.username,
+		author: username ?? null,
 		publishedAt: new Date(row.createdAt).toISOString(),
 		engagement: {
 			...(typeof row.likeCount === "number" ? { score: row.likeCount } : {}),

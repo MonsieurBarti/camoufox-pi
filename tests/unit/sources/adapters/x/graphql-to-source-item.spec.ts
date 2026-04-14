@@ -39,6 +39,18 @@ describe("toSourceItem", () => {
 		const item = toSourceItem(rows[2]!);
 		expect(item.text).toBe("");
 	});
+
+	it("handles null author (deleted user) without crashing", () => {
+		const row: BirdSearchRow = {
+			id: "1700000000000000003",
+			text: "from a deleted account",
+			createdAt: "Fri Apr 12 10:00:00 +0000 2026",
+			author: null,
+		};
+		const item = toSourceItem(row);
+		expect(item.author).toBeNull();
+		expect(item.url).toBe("https://x.com/i/status/1700000000000000003");
+	});
 });
 
 describe("withinLookback", () => {
