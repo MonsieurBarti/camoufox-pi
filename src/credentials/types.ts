@@ -14,6 +14,23 @@ export interface CredentialSpec {
 	readonly loggedInUrlPattern?: RegExp;
 }
 
+/**
+ * Narrows a CredentialSpec to a cookie_jar spec and asserts that loginUrl is
+ * present. cookie_jar credentials require a loginUrl by spec; the field is
+ * optional on the base interface only for historical compatibility with other
+ * credential kinds where loginUrl is irrelevant.
+ */
+export function assertCookieJarSpec(
+	spec: CredentialSpec,
+): asserts spec is CredentialSpec & { loginUrl: string } {
+	if (spec.kind !== "cookie_jar") {
+		throw new Error(`expected cookie_jar spec, got ${spec.kind}`);
+	}
+	if (!spec.loginUrl) {
+		throw new Error(`cookie_jar spec for key=${spec.key} is missing required loginUrl`);
+	}
+}
+
 export function makeNamespacedKey(source: string, key: string): string {
 	if (source.includes(":") || key.includes(":")) {
 		throw new Error(`credential key parts cannot contain ':' (got source=${source}, key=${key})`);

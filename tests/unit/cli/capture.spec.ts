@@ -73,16 +73,12 @@ describe("captureCookieJar — URL watcher wins", () => {
 			promptLine: () => promptPromise,
 		});
 
-		// Flip the fake URL; waitForURL resolves, capture completes.
-		// Use setImmediate to ensure waitForURL is registered first.
-		await new Promise((resolve) => {
-			setImmediate(() => {
-				(launched.context as unknown as { __setPageUrl(u: string): void }).__setPageUrl(
-					"https://x.com/home",
-				);
-				resolve(undefined);
-			});
-		});
+		// Wait for page.goto() to complete so waitForURL is registered before we
+		// flip the URL. This is deterministic — no setImmediate timing hack needed.
+		await (launched.context as unknown as { __pageReady(): Promise<void> }).__pageReady();
+		(launched.context as unknown as { __setPageUrl(u: string): void }).__setPageUrl(
+			"https://x.com/home",
+		);
 
 		const result = await capturePromise;
 		expect(JSON.parse(result.storageStateJson).cookies[0].name).toBe("ct0");

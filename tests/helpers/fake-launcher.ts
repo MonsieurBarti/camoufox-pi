@@ -141,7 +141,11 @@ export function makeFakeLauncher(
 		}>;
 	}
 
-	const makePage = (urlState?: ContextUrlState): Page => {
+	// Per-context registry of pageReady resolvers. Populated by makeContext and
+	// consumed by the page's goto() override.
+	type PageReadyRegistry = Array<() => void>;
+
+	const makePage = (urlState?: ContextUrlState, pageReadyResolvers?: PageReadyRegistry): Page => {
 		controls.pagesOpened += 1;
 		let closed = false;
 		let currentUrl = "";
@@ -166,6 +170,10 @@ export function makeFakeLauncher(
 				if (behavior.nullResponse) return null;
 				currentUrl = behavior.finalUrl ?? url;
 				if (urlState) urlState.currentUrl = currentUrl;
+				// Signal all pageReady waiters now that goto has resolved.
+				if (pageReadyResolvers) {
+					for (const resolve of pageReadyResolvers.splice(0)) resolve();
+				}
 				return {
 					status: () => behavior.status ?? 200,
 					url: () => behavior.finalUrl ?? url,
@@ -362,6 +370,7 @@ export function makeFakeLauncher(
 		let ctxClosed = false;
 
 		const urlState: ContextUrlState = { currentUrl: "", waiters: [] };
+		const pageReadyResolvers: PageReadyRegistry = [];
 
 		// Close-listener registry: persistent (on) and one-time (once).
 		const closeListeners: Array<(ctx: unknown) => void> = [];
@@ -369,7 +378,7 @@ export function makeFakeLauncher(
 
 		const ctx = {
 			async newPage(): Promise<Page> {
-				return makePage(urlState);
+				return makePage(urlState, pageReadyResolvers);
 			},
 			async close(): Promise<void> {
 				if (!ctxClosed) {
@@ -393,6 +402,13 @@ export function makeFakeLauncher(
 			once(event: string, handler: (arg: unknown) => void): unknown {
 				if (event === "close") onceListeners.push(handler);
 				return ctx;
+			},
+			/**
+			 * Test-only: resolves when the next page.goto() call completes.
+			 * Use this instead of setImmediate to drive __setPageUrl deterministically.
+			 */
+			__pageReady(): Promise<void> {
+				return new Promise<void>((resolve) => pageReadyResolvers.push(resolve));
 			},
 			/** Test-only escape hatch: set the shared URL and resolve matching waiters. */
 			__setPageUrl(url: string): void {

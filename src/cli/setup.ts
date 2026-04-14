@@ -1,6 +1,7 @@
 import type { Launcher } from "../client/launcher.js";
 import type { CredentialBackend } from "../credentials/backend.js";
 import { createCredentialReader } from "../credentials/reader.js";
+import { assertCookieJarSpec } from "../credentials/types.js";
 import type { CredentialSpec } from "../credentials/types.js";
 import { makeNamespacedKey } from "../credentials/types.js";
 import type { SourceAdapter } from "../sources/types.js";
@@ -120,8 +121,10 @@ async function handleCredential(
 	if (spec.loginUrl) deps.log(`  Login URL: ${spec.loginUrl}`);
 
 	if (spec.kind === "cookie_jar") {
-		if (!spec.loginUrl) {
-			deps.log("  capture failed: cookie_jar spec missing loginUrl");
+		try {
+			assertCookieJarSpec(spec);
+		} catch (err) {
+			deps.log(`  capture failed: ${err instanceof Error ? err.message : String(err)}`);
 			return false;
 		}
 		try {

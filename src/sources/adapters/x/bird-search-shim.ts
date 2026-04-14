@@ -23,48 +23,52 @@ interface FetchInit {
 	body?: string;
 }
 
-function buildInjectedClient(opts: RunBirdSearchOpts): InstanceType<typeof SearchClient> {
-	// Create a subclass that overrides fetchWithTimeout to route through httpFetch.
-	// We do this per-call (rather than a module-level subclass) so each client
-	// instance carries its own httpFetch/signal closure — no shared state, no
-	// monkey-patch, no concurrency leak.
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	class InjectedSearchClient extends SearchClient {
-		// biome-ignore lint/complexity/noUselessConstructor lint/suspicious/noExplicitAny: TS mixin constructor requirement.
-		constructor(...args: any[]) {
-			// eslint-disable-line @typescript-eslint/no-explicit-any
-			super(...args); // eslint-disable-line @typescript-eslint/no-unsafe-call
-		}
-		async fetchWithTimeout(url: string, init: FetchInit = {}): Promise<Response> {
-			const method = (init.method as "GET" | "POST" | undefined) ?? "GET";
-			const resp = await opts.httpFetch(url, {
-				method,
-				...(init.headers !== undefined ? { headers: init.headers } : {}),
-				...(typeof init.body === "string" ? { body: init.body } : {}),
-				...(opts.signal !== undefined ? { signal: opts.signal } : {}),
-			});
-			return new Response(resp.body, {
-				status: resp.status,
-				headers: resp.headers,
-			});
-		}
+// Module-scoped subclass so the class definition is created once.
+// The constructor accepts per-call dependencies (httpFetch, signal) so each
+// instance is self-contained — no shared state, no monkey-patch, no concurrency leak.
+class InjectedSearchClient extends SearchClient {
+	private readonly injectedHttpFetch: HttpFetch;
+	private readonly injectedSignal: AbortSignal | undefined;
 
-		// SECURITY: the vendored refreshQueryIds() calls runtimeQueryIds.refresh()
-		// which uses globalThis.fetch directly, bypassing our SSRF-guarded httpFetch.
-		// Baked-in QUERY_IDS are sufficient; refuse to refresh dynamically.
-		async refreshQueryIds(): Promise<void> {
-			return;
-		}
-	}
-	// eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call
-	return new InjectedSearchClient({
-		cookies: {
-			authToken: opts.cookies.auth_token,
-			ct0: opts.cookies.ct0,
-			cookieHeader: `auth_token=${opts.cookies.auth_token}; ct0=${opts.cookies.ct0}`,
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	constructor(
+		config: {
+			cookies: { authToken: string; ct0: string; cookieHeader: string };
+			timeoutMs: number;
 		},
-		timeoutMs: 30_000,
-	});
+		injection: { httpFetch: HttpFetch; signal?: AbortSignal },
+	) {
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-call
+		super(config);
+		this.injectedHttpFetch = injection.httpFetch;
+		this.injectedSignal = injection.signal;
+	}
+
+	async fetchWithTimeout(url: string, init: FetchInit = {}): Promise<Response> {
+		const method = (init.method as "GET" | "POST" | undefined) ?? "GET";
+		const resp = await this.injectedHttpFetch(url, {
+			method,
+			...(init.headers !== undefined ? { headers: init.headers } : {}),
+			...(typeof init.body === "string" ? { body: init.body } : {}),
+			...(this.injectedSignal !== undefined ? { signal: this.injectedSignal } : {}),
+		});
+		// Guard against status 0: the fetch spec forbids constructing a Response
+		// with status 0, and some network-layer errors surface this way.
+		if (resp.status === 0) {
+			throw new Error("invalid response: status 0");
+		}
+		return new Response(resp.body, {
+			status: resp.status,
+			headers: resp.headers,
+		});
+	}
+
+	// SECURITY: the vendored refreshQueryIds() calls runtimeQueryIds.refresh()
+	// which uses globalThis.fetch directly, bypassing our SSRF-guarded httpFetch.
+	// Baked-in QUERY_IDS are sufficient; refuse to refresh dynamically.
+	async refreshQueryIds(): Promise<void> {
+		return;
+	}
 }
 
 export async function runBirdSearch(opts: RunBirdSearchOpts): Promise<BirdSearchRow[]> {
@@ -73,7 +77,21 @@ export async function runBirdSearch(opts: RunBirdSearchOpts): Promise<BirdSearch
 		err.name = "AbortError";
 		throw err;
 	}
-	const client = buildInjectedClient(opts);
+	// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
+	const client: InstanceType<typeof SearchClient> = new InjectedSearchClient(
+		{
+			cookies: {
+				authToken: opts.cookies.auth_token,
+				ct0: opts.cookies.ct0,
+				cookieHeader: `auth_token=${opts.cookies.auth_token}; ct0=${opts.cookies.ct0}`,
+			},
+			timeoutMs: 30_000,
+		},
+		{
+			httpFetch: opts.httpFetch,
+			...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+		},
+	);
 	try {
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
 		const result = await client.search(opts.query, opts.limit);
