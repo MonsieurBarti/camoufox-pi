@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { CamoufoxErrorBox } from "../../../../../src/errors.js";
-import { runBirdSearch } from "../../../../../src/sources/adapters/x/bird-search-shim.js";
+import {
+	classifyBirdSearchError,
+	runBirdSearch,
+} from "../../../../../src/sources/adapters/x/bird-search-shim.js";
 import { createFakeHttpFetch } from "../../../../helpers/fake-http-fetch.js";
 
 // The real bird-search client calls https://x.com/i/api/graphql/<queryId>/SearchTimeline?...
@@ -112,5 +115,43 @@ describe("runBirdSearch", () => {
 		} finally {
 			globalThis.fetch = original;
 		}
+	});
+});
+
+describe("classifyBirdSearchError", () => {
+	it("maps GraphQL 200 auth error strings to session_expired", () => {
+		const cases = [
+			"Not authorized: session expired",
+			"not authenticated: token rejected",
+			"bad session",
+			"Authorization failed",
+		];
+		for (const msg of cases) {
+			const e = classifyBirdSearchError(msg);
+			expect(e.err.type).toBe("session_expired");
+			if (e.err.type === "session_expired") {
+				expect(e.err.source).toBe("x");
+				expect(e.err.credentialKey).toBe("cookies");
+			}
+		}
+	});
+
+	it("maps non-auth GraphQL 200 error strings to source_unavailable", () => {
+		const e = classifyBirdSearchError("Rate limit reached for resource X");
+		expect(e.err.type).toBe("source_unavailable");
+		if (e.err.type === "source_unavailable") {
+			expect(e.err.source).toBe("x");
+		}
+	});
+
+	it("maps HTTP-status error strings first, falling through to keyword check", () => {
+		const e429 = classifyBirdSearchError("HTTP 429: retry-after=30");
+		expect(e429.err.type).toBe("source_rate_limited");
+
+		const e500 = classifyBirdSearchError("HTTP 500: internal error");
+		expect(e500.err.type).toBe("source_unavailable");
+
+		const e401 = classifyBirdSearchError("HTTP 401: unauthorized");
+		expect(e401.err.type).toBe("session_expired");
 	});
 });

@@ -98,7 +98,7 @@ export async function runBirdSearch(opts: RunBirdSearchOpts): Promise<BirdSearch
 
 const AUTH_KEYWORDS = /auth|not authenticated|bad session|session expired|not authorized/i;
 
-function classifyBirdSearchError(message: string): CamoufoxErrorBox {
+export function classifyBirdSearchError(message: string): CamoufoxErrorBox {
 	const httpMatch = /^HTTP (\d{3})(?::\s*(.*))?$/.exec(message);
 	if (httpMatch) {
 		const status = Number(httpMatch[1]);
