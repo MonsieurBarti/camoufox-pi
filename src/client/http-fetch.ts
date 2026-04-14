@@ -49,8 +49,14 @@ export function createHttpFetch(opts: CreateHttpFetchOptions): HttpFetch {
 		const start = Date.now();
 		let currentUrl = url;
 		let hopKind: "initial" | "redirect" = "initial";
+		// Mutable effective init so redirect downgrade (303, POST→301/302) can
+		// change method/body without mutating the caller-supplied object.
+		let effectiveInit = init;
 
 		try {
+			// hop 0 is the initial request; hops 1..MAX_REDIRECTS are redirects. The
+			// throw below fires when the loop exits without a non-3xx response — i.e.
+			// after the request that WOULD be redirect #MAX_REDIRECTS + 1.
 			for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
 				try {
 					await assertSafeTarget(currentUrl, opts.lookup ? { lookup: opts.lookup } : {});
@@ -62,10 +68,12 @@ export function createHttpFetch(opts: CreateHttpFetchOptions): HttpFetch {
 						reason: err instanceof Error ? err.message : String(err),
 					});
 				}
+				// TODO(SEC): strip Authorization + Cookie headers on cross-origin redirect
+				// before any adapter starts sending auth via httpFetch.
 				const res = await fetchImpl(currentUrl, {
-					method: init.method ?? "GET",
-					...(init.headers !== undefined ? { headers: init.headers } : {}),
-					...(init.body !== undefined ? { body: init.body } : {}),
+					method: effectiveInit.method ?? "GET",
+					...(effectiveInit.headers !== undefined ? { headers: effectiveInit.headers } : {}),
+					...(effectiveInit.body !== undefined ? { body: effectiveInit.body } : {}),
 					signal: combinedSignal,
 					redirect: "manual",
 				});
@@ -77,6 +85,16 @@ export function createHttpFetch(opts: CreateHttpFetchOptions): HttpFetch {
 						return finalize(res, body, currentUrl, opts, url, start);
 					}
 					const next = new URL(loc, currentUrl).toString();
+					// RFC 7231 §6.4.4: 303 always downgrades to GET with no body.
+					// 301/302 de-facto downgrade POST→GET per all major browsers.
+					if (
+						res.status === 303 ||
+						((res.status === 301 || res.status === 302) &&
+							(effectiveInit.method ?? "GET") === "POST")
+					) {
+						const { body: _dropped, ...rest } = effectiveInit;
+						effectiveInit = { ...rest, method: "GET" };
+					}
 					currentUrl = next;
 					hopKind = "redirect";
 					continue;

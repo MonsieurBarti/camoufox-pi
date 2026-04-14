@@ -92,6 +92,37 @@ describe("httpFetch — redirects", () => {
 		expect(calls).toBe(1);
 	});
 
+	it("downgrades POST to GET with no body on 303 See Other", async () => {
+		const seen: Array<{ url: string; method: string | undefined; body: unknown }> = [];
+		const fetchImpl = (async (
+			url: string | URL | Request,
+			init?: { method?: string; body?: unknown },
+		) => {
+			const u = url.toString();
+			seen.push({ url: u, method: init?.method, body: init?.body });
+			if (u.endsWith("/submit")) {
+				return new Response(null, {
+					status: 303,
+					headers: { location: "https://example.test/done" },
+				});
+			}
+			return new Response("ok", { status: 200 });
+		}) as unknown as typeof fetch;
+		const httpFetch = createHttpFetch({
+			fetchImpl,
+			lookup: (async () =>
+				[
+					{ address: "93.184.216.34", family: 4 },
+				] as unknown as LookupAddress[]) as unknown as LookupFn,
+		});
+		await httpFetch("https://example.test/submit", { method: "POST", body: "payload" });
+		expect(seen).toHaveLength(2);
+		expect(seen[0]?.method).toBe("POST");
+		expect(seen[0]?.body).toBe("payload");
+		expect(seen[1]?.method).toBe("GET");
+		expect(seen[1]?.body).toBeUndefined();
+	});
+
 	it("rejects after more than 10 redirect hops", async () => {
 		let calls = 0;
 		const fetchImpl = (async (url: string | URL | Request) => {
