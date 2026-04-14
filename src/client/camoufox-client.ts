@@ -1,5 +1,7 @@
 import type { Browser, BrowserContext, Page } from "playwright-core";
 
+import type { CredentialBackend } from "../credentials/backend.js";
+import { createKeyringBackend } from "../credentials/keyring-backend.js";
 import { CamoufoxErrorBox, mapPlaywrightError, sanitizeReason } from "../errors.js";
 import { duckduckgoAdapter } from "../search/adapters/duckduckgo.js";
 import { googleAdapter } from "../search/adapters/google.js";
@@ -8,8 +10,11 @@ import { type SearchContext, createSearchContext } from "../search/search-contex
 import type { RawResult, SearchEngineChoice, SearchEngineName } from "../search/types.js";
 import { type SsrfGuard, attachSsrfGuard } from "../security/redirect-guard.js";
 import { type LookupFn, assertSafeTarget } from "../security/ssrf.js";
+import { type FetchSourcesOptions, fetchSources } from "../sources/orchestrator.js";
+import type { FetchSourcesResult, SourceAdapter, SourceName } from "../sources/types.js";
 import type { CamoufoxConfig } from "../types.js";
 import { DEFAULT_CONFIG } from "../types.js";
+import type { CredentialsConfig } from "./credentials-config.js";
 import {
 	type BinaryDownloadProgressEvent,
 	type BrowserLaunchEvent,
@@ -31,6 +36,7 @@ import {
 	validateFetchUrlOpts,
 	waitForSelectorOrThrow,
 } from "./fetch-pipeline.js";
+import { type HttpFetch, createHttpFetch } from "./http-fetch.js";
 import type { Launcher } from "./launcher.js";
 import { combineSignals } from "./signal.js";
 
@@ -63,6 +69,9 @@ export interface CamoufoxClientOptions {
 	readonly config?: CamoufoxConfig;
 	/** Optional DNS lookup override; used to inject stubs in tests. */
 	readonly ssrfLookup?: LookupFn;
+	readonly sources?: readonly SourceAdapter[];
+	readonly credentials?: CredentialsConfig;
+	readonly httpFetch?: HttpFetch;
 }
 
 export class CamoufoxClient {
@@ -72,11 +81,19 @@ export class CamoufoxClient {
 	private readonly ssrfLookup: LookupFn | undefined;
 	private state: ReadyState = { status: "idle" };
 	private searchContext: SearchContext | null = null;
+	private readonly sources: readonly SourceAdapter[];
+	private readonly credentialsConfig: CredentialsConfig | undefined;
+	private readonly httpFetchInjected: HttpFetch | undefined;
+	private credentialBackendCache: CredentialBackend | null = null;
+	private httpFetchCache: HttpFetch | null = null;
 
 	constructor(opts: CamoufoxClientOptions) {
 		this.launcher = opts.launcher;
 		this.config = opts.config ?? DEFAULT_CONFIG;
 		this.ssrfLookup = opts.ssrfLookup;
+		this.sources = opts.sources ?? [];
+		this.credentialsConfig = opts.credentials;
+		this.httpFetchInjected = opts.httpFetch;
 	}
 
 	isAlive(): boolean {
@@ -390,6 +407,70 @@ export class CamoufoxClient {
 			this.emitError(spanId, "search", err);
 			throw err;
 		}
+	}
+
+	async fetchSources(
+		query: string,
+		opts: {
+			readonly sources: readonly SourceName[];
+			readonly lookbackDays?: number;
+			readonly perSourceLimit?: number;
+			readonly signal?: AbortSignal;
+		},
+	): Promise<FetchSourcesResult> {
+		const backend = await this.getOrInitCredentialBackend();
+		const httpFetch = this.getOrInitHttpFetch();
+		const orchestratorOpts: FetchSourcesOptions = {
+			sources: opts.sources,
+			lookbackDays: opts.lookbackDays ?? 30,
+			perSourceLimit: opts.perSourceLimit ?? 25,
+			adapters: this.sources,
+			credentialBackend: backend,
+			httpFetch,
+			emit: (e) => {
+				this.events.emit("source_fetch", e);
+			},
+			...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+		};
+		return fetchSources(query, orchestratorOpts);
+	}
+
+	private async getOrInitCredentialBackend(): Promise<CredentialBackend> {
+		if (this.credentialBackendCache) return this.credentialBackendCache;
+		const cfg = this.credentialsConfig;
+		if (cfg?.backend === "custom") {
+			if (!cfg.customBackend) {
+				throw new CamoufoxErrorBox({
+					type: "config_invalid",
+					field: "credentials.customBackend",
+					reason: "backend=custom requires customBackend",
+				});
+			}
+			this.credentialBackendCache = cfg.customBackend;
+			return this.credentialBackendCache;
+		}
+		try {
+			this.credentialBackendCache = await createKeyringBackend();
+		} catch (err) {
+			throw new CamoufoxErrorBox({
+				type: "credential_backend_unavailable",
+				backend: "keyring",
+				reason: err instanceof Error ? err.message : String(err),
+			});
+		}
+		return this.credentialBackendCache;
+	}
+
+	private getOrInitHttpFetch(): HttpFetch {
+		if (this.httpFetchInjected) return this.httpFetchInjected;
+		if (this.httpFetchCache) return this.httpFetchCache;
+		this.httpFetchCache = createHttpFetch({
+			...(this.ssrfLookup ? { lookup: this.ssrfLookup } : {}),
+			emit: (e) => {
+				this.events.emit("http_fetch", e);
+			},
+		});
+		return this.httpFetchCache;
 	}
 
 	protected async navigate(
