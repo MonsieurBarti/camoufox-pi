@@ -180,7 +180,10 @@ async function runRefresh(deps: RunSetupDeps, sourceName: string): Promise<numbe
 			);
 			continue;
 		}
-		await deps.backend.delete(makeNamespacedKey(sourceName, spec.key));
+		// Capture first, then store on success. The previous behavior deleted the
+		// stored credential before capturing, which wiped the working session if
+		// the user aborted mid-capture. handleCredential calls backend.set() on
+		// success, which atomically overwrites the old value — no explicit delete needed.
 		const handled = await handleCredential(sourceName, spec, deps);
 		if (!handled) return 1;
 	}

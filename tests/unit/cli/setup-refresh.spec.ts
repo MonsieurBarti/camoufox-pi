@@ -21,7 +21,7 @@ function xLikeAdapter(): SourceAdapter {
 }
 
 describe("runSetup --refresh", () => {
-	it("deletes the existing cookie_jar credential and re-captures", async () => {
+	it("captures and stores the new cookie_jar credential without deleting the old one first", async () => {
 		const backend = createFakeCredentialBackend();
 		await backend.set("camoufox-pi:x:cookies", JSON.stringify({ cookies: [], origins: [] }));
 		const ops: string[] = [];
@@ -66,8 +66,8 @@ describe("runSetup --refresh", () => {
 		});
 
 		expect(code).toBe(0);
-		expect(ops[0]).toBe("del:camoufox-pi:x:cookies");
-		expect(ops[1]).toBe("set:camoufox-pi:x:cookies");
+		// Only a set should be observed — capture-first means no delete before capture.
+		expect(ops).toEqual(["set:camoufox-pi:x:cookies"]);
 		const stored = await backend.get("camoufox-pi:x:cookies");
 		expect(JSON.parse(stored as string).cookies[0].value).toBe("NEW");
 	});
