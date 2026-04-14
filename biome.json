@@ -36,7 +36,7 @@
 		}
 	},
 	"files": {
-		"ignore": ["node_modules", "dist", "*.md", ".pi", "coverage", ".worktrees"]
+		"ignore": ["node_modules", "dist", "*.md", ".pi", "coverage", ".worktrees", "vendor"]
 	},
 	"overrides": [
 		{
