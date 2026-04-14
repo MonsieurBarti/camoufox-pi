@@ -45,4 +45,14 @@ describe("runCli --refresh", () => {
 		expect(code).toBe(2);
 		expect(logs.join("\n")).toMatch(/--refresh requires a source/);
 	});
+
+	it("returns exit 2 when the refresh source is not registered", async () => {
+		const logs: string[] = [];
+		const code = await runCli(["setup", "--refresh", "bogus"], {
+			handlers: {},
+			log: (l) => logs.push(l),
+		});
+		expect(code).toBe(2);
+		expect(logs.join("\n")).toMatch(/unknown source: bogus/);
+	});
 });

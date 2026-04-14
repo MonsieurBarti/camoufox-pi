@@ -44,8 +44,8 @@ export async function runCli(argv: readonly string[], deps: RunCliDeps): Promise
 			}
 			const handler = deps.handlers[`setup:refresh:${source}`];
 			if (!handler) {
-				deps.log(`refresh handler not wired for source: ${source}`);
-				return 1;
+				deps.log(`unknown source: ${source}`);
+				return 2;
 			}
 			return handler();
 		}
