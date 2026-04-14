@@ -36,19 +36,9 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 
 export function createHttpFetch(opts: CreateHttpFetchOptions): HttpFetch {
 	const fetchImpl = opts.fetchImpl ?? fetch;
+	const MAX_REDIRECTS = 10;
+
 	return async (url: string, init: HttpFetchInit = {}): Promise<HttpResponse> => {
-		// SSRF + scheme check on initial URL. Redirects are handled in the next
-		// task and each hop re-validates.
-		try {
-			await assertSafeTarget(url, opts.lookup ? { lookup: opts.lookup } : {});
-		} catch (err) {
-			throw new CamoufoxErrorBox({
-				type: "ssrf_blocked",
-				hop: "initial",
-				url,
-				reason: err instanceof Error ? err.message : String(err),
-			});
-		}
 		const maxBytes = init.maxBytes ?? DEFAULT_MAX_BYTES;
 		const timeoutMs = init.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 		const controller = new AbortController();
@@ -57,32 +47,50 @@ export function createHttpFetch(opts: CreateHttpFetchOptions): HttpFetch {
 			? AbortSignal.any([init.signal, controller.signal])
 			: controller.signal;
 		const start = Date.now();
+		let currentUrl = url;
+		let hopKind: "initial" | "redirect" = "initial";
+
 		try {
-			const res = await fetchImpl(url, {
-				method: init.method ?? "GET",
-				...(init.headers !== undefined ? { headers: init.headers } : {}),
-				...(init.body !== undefined ? { body: init.body } : {}),
-				signal: combinedSignal,
-				redirect: "manual",
+			for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+				try {
+					await assertSafeTarget(currentUrl, opts.lookup ? { lookup: opts.lookup } : {});
+				} catch (err) {
+					throw new CamoufoxErrorBox({
+						type: "ssrf_blocked",
+						hop: hopKind,
+						url: currentUrl,
+						reason: err instanceof Error ? err.message : String(err),
+					});
+				}
+				const res = await fetchImpl(currentUrl, {
+					method: init.method ?? "GET",
+					...(init.headers !== undefined ? { headers: init.headers } : {}),
+					...(init.body !== undefined ? { body: init.body } : {}),
+					signal: combinedSignal,
+					redirect: "manual",
+				});
+				if (isRedirectStatus(res.status)) {
+					const loc = res.headers.get("location");
+					if (!loc) {
+						// Malformed redirect — treat as final response.
+						const body = await readBodyLimited(res, maxBytes);
+						return finalize(res, body, currentUrl, opts, url, start);
+					}
+					const next = new URL(loc, currentUrl).toString();
+					currentUrl = next;
+					hopKind = "redirect";
+					continue;
+				}
+				const body = await readBodyLimited(res, maxBytes);
+				return finalize(res, body, currentUrl, opts, url, start);
+			}
+			throw new CamoufoxErrorBox({
+				type: "network",
+				cause: `exceeded ${MAX_REDIRECTS} redirect hops`,
+				url: currentUrl,
 			});
-			// Redirects are handled in Task 5. For Task 4, a 3xx surfaces as-is.
-			const body = await readBodyLimited(res, maxBytes);
-			const headers = headersToRecord(res.headers);
-			const response: HttpResponse = {
-				status: res.status,
-				headers,
-				body,
-				url: res.url || url,
-			};
-			opts.emit?.({
-				spanId: opts.spanIdFor?.() ?? "",
-				...(opts.source !== undefined ? { source: opts.source } : {}),
-				url,
-				status: res.status,
-				durationMs: Date.now() - start,
-			});
-			return response;
 		} catch (err) {
+			if (err instanceof CamoufoxErrorBox) throw err;
 			// Tie-break: if both the internal timer and external signal fired, the
 			// external cancellation wins (aborted) — checked via init.signal.aborted.
 			if (combinedSignal.aborted && !init.signal?.aborted) {
@@ -98,12 +106,40 @@ export function createHttpFetch(opts: CreateHttpFetchOptions): HttpFetch {
 			throw new CamoufoxErrorBox({
 				type: "network",
 				cause: err instanceof Error ? err.message : String(err),
-				url,
+				url: currentUrl,
 			});
 		} finally {
 			clearTimeout(timer);
 		}
 	};
+}
+
+function isRedirectStatus(status: number): boolean {
+	return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
+}
+
+function finalize(
+	res: Response,
+	body: string,
+	finalUrl: string,
+	opts: CreateHttpFetchOptions,
+	originalUrl: string,
+	start: number,
+): HttpResponse {
+	const response: HttpResponse = {
+		status: res.status,
+		headers: headersToRecord(res.headers),
+		body,
+		url: finalUrl,
+	};
+	opts.emit?.({
+		spanId: opts.spanIdFor?.() ?? "",
+		...(opts.source !== undefined ? { source: opts.source } : {}),
+		url: originalUrl,
+		status: res.status,
+		durationMs: Date.now() - start,
+	});
+	return response;
 }
 
 async function readBodyLimited(res: Response, maxBytes: number): Promise<string> {
