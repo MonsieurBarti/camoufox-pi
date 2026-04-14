@@ -90,3 +90,55 @@ describe("captureCookieJar — URL watcher wins", () => {
 		enterResolve?.("");
 	});
 });
+
+describe("captureCookieJar — failure races", () => {
+	it("rejects when the user closes the browser before capture", async () => {
+		const launcher = makeFakeLauncher({});
+		const launched = await launcher.launch();
+		const promise = captureCookieJar({
+			source: "x",
+			loginUrl: "https://x.com/login",
+			launcher: { launch: async () => launched },
+			log: () => {},
+			promptLine: () => new Promise(() => {}),
+		});
+		await new Promise((resolve) => {
+			setImmediate(() => {
+				launched.context.close();
+				resolve(undefined);
+			});
+		});
+		await expect(promise).rejects.toThrow(/browser closed/);
+	});
+
+	it("rejects when the abort signal fires", async () => {
+		const launcher = makeFakeLauncher({});
+		const ac = new AbortController();
+		const promise = captureCookieJar({
+			source: "x",
+			loginUrl: "https://x.com/login",
+			launcher,
+			log: () => {},
+			promptLine: () => new Promise(() => {}),
+			signal: ac.signal,
+		});
+		ac.abort();
+		await expect(promise).rejects.toThrow(/aborted/);
+	});
+
+	it("rejects immediately if the signal is already aborted", async () => {
+		const launcher = makeFakeLauncher({});
+		const ac = new AbortController();
+		ac.abort();
+		await expect(
+			captureCookieJar({
+				source: "x",
+				loginUrl: "https://x.com/login",
+				launcher,
+				log: () => {},
+				promptLine: () => new Promise(() => {}),
+				signal: ac.signal,
+			}),
+		).rejects.toThrow(/aborted/);
+	});
+});
