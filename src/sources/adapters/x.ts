@@ -1,0 +1,39 @@
+import type { HttpFetchEvent, SourceFetchEvent } from "../../client/events.js";
+import type { SourceAdapter } from "../types.js";
+import { runBirdSearch } from "./x/bird-search-shim.js";
+import { toSourceItem, withinLookback } from "./x/graphql-to-source-item.js";
+import { extractXCookies, parseStorageState } from "./x/storage-state.js";
+
+export function xAdapter(): SourceAdapter {
+	return {
+		name: "x",
+		tier: 2,
+		requiredCredentials: [
+			{
+				kind: "cookie_jar",
+				key: "cookies",
+				description: "X (Twitter) session cookies for search access",
+				loginUrl: "https://x.com/login",
+				loggedInUrlPattern: /^https:\/\/x\.com\/(home|i\/|[^/]+\/?$)/,
+			},
+		],
+		async fetch(query, opts, ctx) {
+			const stateJson = await ctx.credentials.require("cookies");
+			const state = parseStorageState(stateJson);
+			const cookies = extractXCookies(state);
+			const rows = await runBirdSearch({
+				query,
+				limit: opts.limit,
+				cookies,
+				httpFetch: ctx.httpFetch,
+				...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+				emit: (e: SourceFetchEvent | HttpFetchEvent) => {
+					if ("query" in e) ctx.emit(e as SourceFetchEvent);
+				},
+			});
+			return rows
+				.map(toSourceItem)
+				.filter((item) => withinLookback(item.publishedAt, opts.lookbackDays));
+		},
+	};
+}
