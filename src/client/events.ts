@@ -48,12 +48,33 @@ export interface ErrorEvent {
 	readonly error: CamoufoxError;
 }
 
+export interface SourceFetchEvent {
+	readonly spanId: string;
+	readonly source: string;
+	readonly query: string;
+	readonly tier: 0 | 1 | 2 | 4;
+	readonly outcome: "ok" | "error";
+	readonly itemCount: number;
+	readonly durationMs: number;
+	readonly error?: CamoufoxError;
+}
+
+export interface HttpFetchEvent {
+	readonly spanId: string;
+	readonly source?: string;
+	readonly url: string;
+	readonly status: number;
+	readonly durationMs: number;
+}
+
 export interface CamoufoxEvents {
 	search: (e: SearchEvent) => void;
 	fetch_url: (e: FetchUrlEvent) => void;
 	browser_launch: (e: BrowserLaunchEvent) => void;
 	binary_download_progress: (e: BinaryDownloadProgressEvent) => void;
 	error: (e: ErrorEvent) => void;
+	source_fetch: (e: SourceFetchEvent) => void;
+	http_fetch: (e: HttpFetchEvent) => void;
 }
 
 export interface CamoufoxEventEmitter {

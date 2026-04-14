@@ -148,3 +148,40 @@ describe("CamoufoxEventEmitter", () => {
 		errSpy.mockRestore();
 	});
 });
+
+describe("source fetch events", () => {
+	it("emits source_fetch event with expected shape", () => {
+		const ee = createEventEmitter();
+		const payloads: unknown[] = [];
+		ee.on("source_fetch", (e) => {
+			payloads.push(e);
+		});
+		ee.emit("source_fetch", {
+			spanId: "abc",
+			source: "reddit",
+			query: "rust",
+			tier: 0,
+			outcome: "ok",
+			itemCount: 5,
+			durationMs: 123,
+		});
+		expect(payloads).toHaveLength(1);
+		expect((payloads[0] as { source: string }).source).toBe("reddit");
+	});
+
+	it("emits http_fetch event with status and duration", () => {
+		const ee = createEventEmitter();
+		const payloads: unknown[] = [];
+		ee.on("http_fetch", (e) => {
+			payloads.push(e);
+		});
+		ee.emit("http_fetch", {
+			spanId: "abc",
+			source: "reddit",
+			url: "https://reddit.com/search.json",
+			status: 200,
+			durationMs: 45,
+		});
+		expect((payloads[0] as { status: number }).status).toBe(200);
+	});
+});
