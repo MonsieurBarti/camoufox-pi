@@ -2,7 +2,6 @@
 import { TwitterClientBase } from "../../../../vendor/bird-search/lib/twitter-client-base.js";
 // @ts-ignore — vendor JS, no declaration file
 import { withSearch } from "../../../../vendor/bird-search/lib/twitter-client-search.js";
-import type { HttpFetchEvent, SourceFetchEvent } from "../../../client/events.js";
 import type { HttpFetch } from "../../../client/http-fetch.js";
 import { CamoufoxErrorBox } from "../../../errors.js";
 import type { BirdSearchRow } from "./graphql-to-source-item.js";
@@ -16,7 +15,49 @@ export interface RunBirdSearchOpts {
 	readonly cookies: { auth_token: string; ct0: string };
 	readonly httpFetch: HttpFetch;
 	readonly signal?: AbortSignal;
-	readonly emit: (e: SourceFetchEvent | HttpFetchEvent) => void;
+}
+
+interface FetchInit {
+	method?: string;
+	headers?: Record<string, string>;
+	body?: string;
+}
+
+function buildInjectedClient(opts: RunBirdSearchOpts): InstanceType<typeof SearchClient> {
+	// Create a subclass that overrides fetchWithTimeout to route through httpFetch.
+	// We do this per-call (rather than a module-level subclass) so each client
+	// instance carries its own httpFetch/signal closure — no shared state, no
+	// monkey-patch, no concurrency leak.
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	class InjectedSearchClient extends SearchClient {
+		// biome-ignore lint/complexity/noUselessConstructor lint/suspicious/noExplicitAny: TS mixin constructor requirement.
+		constructor(...args: any[]) {
+			// eslint-disable-line @typescript-eslint/no-explicit-any
+			super(...args); // eslint-disable-line @typescript-eslint/no-unsafe-call
+		}
+		async fetchWithTimeout(url: string, init: FetchInit = {}): Promise<Response> {
+			const method = (init.method as "GET" | "POST" | undefined) ?? "GET";
+			const resp = await opts.httpFetch(url, {
+				method,
+				...(init.headers !== undefined ? { headers: init.headers } : {}),
+				...(typeof init.body === "string" ? { body: init.body } : {}),
+				...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+			});
+			return new Response(resp.body, {
+				status: resp.status,
+				headers: resp.headers,
+			});
+		}
+	}
+	// eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call
+	return new InjectedSearchClient({
+		cookies: {
+			authToken: opts.cookies.auth_token,
+			ct0: opts.cookies.ct0,
+			cookieHeader: `auth_token=${opts.cookies.auth_token}; ct0=${opts.cookies.ct0}`,
+		},
+		timeoutMs: 30_000,
+	});
 }
 
 export async function runBirdSearch(opts: RunBirdSearchOpts): Promise<BirdSearchRow[]> {
@@ -25,47 +66,8 @@ export async function runBirdSearch(opts: RunBirdSearchOpts): Promise<BirdSearch
 		err.name = "AbortError";
 		throw err;
 	}
-
-	// Build the webFetch that routes through httpFetch, emits events, and classifies errors.
-	const webFetch: typeof fetch = async (input, init) => {
-		const url =
-			typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
-		const method = (init?.method as "GET" | "POST" | undefined) ?? "GET";
-		const startedAt = Date.now();
-		const rawHeaders = init?.headers as Record<string, string> | undefined;
-		const resp = await opts.httpFetch(url, {
-			method,
-			...(rawHeaders !== undefined ? { headers: rawHeaders } : {}),
-			...(typeof init?.body === "string" ? { body: init.body } : {}),
-			...(opts.signal !== undefined ? { signal: opts.signal } : {}),
-		});
-		opts.emit({
-			spanId: "",
-			source: "x",
-			url: resp.url,
-			status: resp.status,
-			durationMs: Date.now() - startedAt,
-		});
-		// Return a minimal web-Response for bird-search to consume.
-		return new Response(resp.body, {
-			status: resp.status,
-			headers: resp.headers,
-		});
-	};
-
-	const originalFetch = globalThis.fetch;
-	// Monkey-patch globalThis.fetch for the duration of the search call.
-	globalThis.fetch = webFetch;
+	const client = buildInjectedClient(opts);
 	try {
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
-		const client = new SearchClient({
-			cookies: {
-				authToken: opts.cookies.auth_token,
-				ct0: opts.cookies.ct0,
-				cookieHeader: `auth_token=${opts.cookies.auth_token}; ct0=${opts.cookies.ct0}`,
-			},
-			timeoutMs: 30_000,
-		});
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
 		const result = await client.search(opts.query, opts.limit);
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
@@ -84,8 +86,6 @@ export async function runBirdSearch(opts: RunBirdSearchOpts): Promise<BirdSearch
 			source: "x",
 			cause: err instanceof Error ? err.message : String(err),
 		});
-	} finally {
-		globalThis.fetch = originalFetch;
 	}
 }
 

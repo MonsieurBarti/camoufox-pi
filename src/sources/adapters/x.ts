@@ -1,4 +1,3 @@
-import type { HttpFetchEvent, SourceFetchEvent } from "../../client/events.js";
 import type { SourceAdapter } from "../types.js";
 import { runBirdSearch } from "./x/bird-search-shim.js";
 import { toSourceItem, withinLookback } from "./x/graphql-to-source-item.js";
@@ -27,9 +26,6 @@ export function xAdapter(): SourceAdapter {
 				cookies,
 				httpFetch: ctx.httpFetch,
 				...(opts.signal !== undefined ? { signal: opts.signal } : {}),
-				emit: (e: SourceFetchEvent | HttpFetchEvent) => {
-					if ("query" in e) ctx.emit(e as SourceFetchEvent);
-				},
 			});
 			return rows
 				.map(toSourceItem)

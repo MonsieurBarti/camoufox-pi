@@ -14,7 +14,6 @@ function makeOpts(httpFetch: ReturnType<typeof createFakeHttpFetch>, signal?: Ab
 		cookies: { auth_token: "fake_auth", ct0: "fake_ct0" },
 		httpFetch,
 		...(signal !== undefined ? { signal } : {}),
-		emit: () => {},
 	};
 }
 
@@ -73,12 +72,19 @@ describe("runBirdSearch", () => {
 		expect((err as CamoufoxErrorBox).err.type).toBe("source_unavailable");
 	});
 
-	it("restores globalThis.fetch in the finally block even on error", async () => {
-		const original = globalThis.fetch;
+	it("does not mutate globalThis.fetch", async () => {
+		const before = globalThis.fetch;
 		const httpFetch = createFakeHttpFetch({
-			[SEARCH_PREFIX]: { status: 401, body: "Unauthorized", headers: {} },
+			"*": { status: 401, headers: {}, body: "" },
 		});
-		await catchErr(runBirdSearch(makeOpts(httpFetch)));
-		expect(globalThis.fetch).toBe(original);
+		await catchErr(
+			runBirdSearch({
+				query: "q",
+				limit: 5,
+				cookies: { auth_token: "A", ct0: "C" },
+				httpFetch,
+			}),
+		);
+		expect(globalThis.fetch).toBe(before);
 	});
 });
