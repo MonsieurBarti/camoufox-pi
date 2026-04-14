@@ -146,6 +146,123 @@ describe("httpFetch — redirects", () => {
 		});
 		expect(calls).toBeLessThanOrEqual(11);
 	});
+
+	it("strips Authorization / Cookie / X-CSRF-Token on cross-origin redirect", async () => {
+		const seen: Array<{ url: string; headers: Record<string, string> | undefined }> = [];
+		const fetchImpl = (async (
+			url: string | URL | Request,
+			init?: { headers?: Record<string, string> },
+		) => {
+			const u = url.toString();
+			seen.push({ url: u, headers: init?.headers });
+			if (u === "https://a.example/start") {
+				return new Response(null, {
+					status: 302,
+					headers: { location: "https://b.example/dest" },
+				});
+			}
+			return new Response("ok", { status: 200 });
+		}) as unknown as typeof fetch;
+		const httpFetch = createHttpFetch({
+			fetchImpl,
+			lookup: (async () =>
+				[
+					{ address: "93.184.216.34", family: 4 },
+				] as unknown as LookupAddress[]) as unknown as LookupFn,
+		});
+		await httpFetch("https://a.example/start", {
+			headers: {
+				Authorization: "Bearer token",
+				Cookie: "auth_token=abc",
+				"X-CSRF-Token": "csrf123",
+				"Content-Type": "application/json",
+			},
+		});
+		expect(seen).toHaveLength(2);
+		const secondHeaders = seen[1]?.headers ?? {};
+		expect(secondHeaders.Authorization).toBeUndefined();
+		expect(secondHeaders.Cookie).toBeUndefined();
+		expect(secondHeaders["X-CSRF-Token"]).toBeUndefined();
+		expect(secondHeaders["Content-Type"]).toBe("application/json");
+	});
+
+	it("preserves Authorization / Cookie on same-origin redirect", async () => {
+		const seen: Array<{ url: string; headers: Record<string, string> | undefined }> = [];
+		const fetchImpl = (async (
+			url: string | URL | Request,
+			init?: { headers?: Record<string, string> },
+		) => {
+			const u = url.toString();
+			seen.push({ url: u, headers: init?.headers });
+			if (u === "https://a.example/start") {
+				return new Response(null, {
+					status: 302,
+					headers: { location: "https://a.example/dest" },
+				});
+			}
+			return new Response("ok", { status: 200 });
+		}) as unknown as typeof fetch;
+		const httpFetch = createHttpFetch({
+			fetchImpl,
+			lookup: (async () =>
+				[
+					{ address: "93.184.216.34", family: 4 },
+				] as unknown as LookupAddress[]) as unknown as LookupFn,
+		});
+		await httpFetch("https://a.example/start", {
+			headers: {
+				Authorization: "Bearer token",
+				Cookie: "auth_token=abc",
+				"X-CSRF-Token": "csrf123",
+			},
+		});
+		expect(seen).toHaveLength(2);
+		const secondHeaders = seen[1]?.headers ?? {};
+		expect(secondHeaders.Authorization).toBe("Bearer token");
+		expect(secondHeaders.Cookie).toBe("auth_token=abc");
+		expect(secondHeaders["X-CSRF-Token"]).toBe("csrf123");
+	});
+
+	it("strips headers case-insensitively (authorization, Cookie, X-Csrf-Token, x-csrf-token)", async () => {
+		const seen: Array<{ url: string; headers: Record<string, string> | undefined }> = [];
+		const fetchImpl = (async (
+			url: string | URL | Request,
+			init?: { headers?: Record<string, string> },
+		) => {
+			const u = url.toString();
+			seen.push({ url: u, headers: init?.headers });
+			if (u === "https://a.example/start") {
+				return new Response(null, {
+					status: 302,
+					headers: { location: "https://b.example/dest" },
+				});
+			}
+			return new Response("ok", { status: 200 });
+		}) as unknown as typeof fetch;
+		const httpFetch = createHttpFetch({
+			fetchImpl,
+			lookup: (async () =>
+				[
+					{ address: "93.184.216.34", family: 4 },
+				] as unknown as LookupAddress[]) as unknown as LookupFn,
+		});
+		await httpFetch("https://a.example/start", {
+			headers: {
+				authorization: "Bearer lower",
+				Cookie: "auth_token=abc",
+				"X-Csrf-Token": "mixed1",
+				"x-csrf-token": "lower1",
+				"keep-me": "yes",
+			},
+		});
+		expect(seen).toHaveLength(2);
+		const h = seen[1]?.headers ?? {};
+		expect(h.authorization).toBeUndefined();
+		expect(h.Cookie).toBeUndefined();
+		expect(h["X-Csrf-Token"]).toBeUndefined();
+		expect(h["x-csrf-token"]).toBeUndefined();
+		expect(h["keep-me"]).toBe("yes");
+	});
 });
 
 describe("httpFetch — maxBytes + timeout", () => {
