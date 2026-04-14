@@ -45,6 +45,31 @@ export type {
 export type { CamoufoxError } from "./errors.js";
 export type { RawResult, SearchEngineChoice, SearchEngineName } from "./search/types.js";
 
+// Sources (milestone 5)
+export type {
+	SourceName,
+	KnownSourceName,
+	SourceAdapter,
+	SourceFetchOptions,
+	AdapterContext,
+	FetchSourcesResult,
+	BrowserSession,
+} from "./sources/types.js";
+export type { SourceItem } from "./sources/source-item.js";
+export { redditAdapter } from "./sources/adapters/reddit.js";
+
+// Credentials (milestone 5)
+export type { CredentialBackend } from "./credentials/backend.js";
+export type { CredentialSpec, CredentialKind } from "./credentials/types.js";
+export type { CredentialReader } from "./credentials/reader.js";
+export type { CredentialsConfig } from "./client/credentials-config.js";
+
+// HTTP primitive (type only — no public constructor on the client)
+export type { HttpFetch, HttpFetchInit, HttpResponse } from "./client/http-fetch.js";
+
+// Events (milestone 5 additions)
+export type { SourceFetchEvent, HttpFetchEvent } from "./client/events.js";
+
 // ---------------------------------------------------------------------------
 // Structural PI API — minimal subset of what @mariozechner/pi-coding-agent
 // exposes at runtime. We deliberately avoid importing the real type so this

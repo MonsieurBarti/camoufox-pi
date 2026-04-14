@@ -1,14 +1,23 @@
 import type { LookupFn } from "../security/ssrf.js";
+import type { SourceAdapter } from "../sources/types.js";
 import type { CamoufoxConfig } from "../types.js";
 import { DEFAULT_CONFIG } from "../types.js";
 import { CamoufoxClient } from "./camoufox-client.js";
+import type { CredentialsConfig } from "./credentials-config.js";
+import type { HttpFetch } from "./http-fetch.js";
 import { type Launcher, RealLauncher } from "./launcher.js";
+
+export type { CredentialsConfig };
 
 export interface CreateClientOptions {
 	readonly config?: Partial<CamoufoxConfig>;
 	readonly launcher?: Launcher;
 	/** Optional DNS lookup override; forwarded to CamoufoxClient for test injection. */
 	readonly ssrfLookup?: LookupFn;
+	readonly sources?: readonly SourceAdapter[];
+	readonly credentials?: CredentialsConfig;
+	/** Test seam: inject a fake HttpFetch, bypassing createHttpFetch. */
+	readonly httpFetch?: HttpFetch;
 }
 
 /**
@@ -27,6 +36,9 @@ export function createClient(opts: CreateClientOptions = {}): CamoufoxClient {
 		launcher,
 		config,
 		...(opts.ssrfLookup !== undefined ? { ssrfLookup: opts.ssrfLookup } : {}),
+		...(opts.sources !== undefined ? { sources: opts.sources } : {}),
+		...(opts.credentials !== undefined ? { credentials: opts.credentials } : {}),
+		...(opts.httpFetch !== undefined ? { httpFetch: opts.httpFetch } : {}),
 	});
 	// Fire-and-forget: first op awaits the in-flight promise via ensureReady.
 	client.ensureReady().catch(() => undefined);
