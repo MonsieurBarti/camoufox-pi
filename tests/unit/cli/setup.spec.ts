@@ -112,4 +112,20 @@ describe("runSetup audit", () => {
 		expect(logs.join("\n")).toContain("not yet implemented");
 		expect(exit).not.toBe(0);
 	});
+
+	it("prints an explanatory message and exits 0 when no adapters are registered", async () => {
+		const logs: string[] = [];
+		const exit = await runSetup({
+			mode: "full",
+			adapters: [],
+			backend: createFakeCredentialBackend(),
+			log: (l) => {
+				logs.push(l);
+			},
+			promptLine: async () => "",
+			promptSecret: async () => "",
+		});
+		expect(exit).toBe(0);
+		expect(logs.join("\n")).toContain("No source adapters are registered");
+	});
 });

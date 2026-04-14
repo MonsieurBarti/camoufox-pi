@@ -26,6 +26,14 @@ interface AuditRow {
 
 export async function runSetup(deps: RunSetupDeps): Promise<number> {
 	deps.log("camoufox-pi setup — audit");
+	if (deps.adapters.length === 0) {
+		deps.log("");
+		deps.log("No source adapters are registered on the default CLI entry.");
+		deps.log("Source adapters are registered programmatically via:");
+		deps.log("  createClient({ sources: [redditAdapter(), /* ... */] })");
+		deps.log("If you meant to audit an application, run setup from that app's context.");
+		return 0;
+	}
 	const rows = await audit(deps.adapters, deps.backend);
 	printAudit(rows, deps.log);
 
