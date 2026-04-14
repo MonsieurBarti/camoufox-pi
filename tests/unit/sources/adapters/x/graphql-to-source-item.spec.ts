@@ -12,7 +12,7 @@ const rows = JSON.parse(
 
 describe("toSourceItem", () => {
 	it("maps a standard row", () => {
-		// biome-ignore lint/style/noNonNullAssertion: fixture has 3 rows
+		// biome-ignore lint/style/noNonNullAssertion: fixture is known to have at least 1 row
 		const item = toSourceItem(rows[0]!);
 		expect(item.source).toBe("x");
 		expect(item.id).toBe("1700000000000000000");
@@ -26,15 +26,16 @@ describe("toSourceItem", () => {
 		expect(item.engagement.shares).toBe(7);
 	});
 
-	it("maps null author when user is null (deleted)", () => {
-		// biome-ignore lint/style/noNonNullAssertion: fixture has 3 rows
+	it("omits engagement keys when counters are absent", () => {
+		// biome-ignore lint/style/noNonNullAssertion: fixture is known to have at least 3 rows
 		const item = toSourceItem(rows[2]!);
-		expect(item.author).toBeNull();
-		expect(item.url).toBe("https://x.com/i/status/1700000000000000002");
+		expect(item.engagement.score).toBeUndefined();
+		expect(item.engagement.comments).toBeUndefined();
+		expect(item.engagement.shares).toBeUndefined();
 	});
 
 	it("keeps empty text as empty string, not null", () => {
-		// biome-ignore lint/style/noNonNullAssertion: fixture has 3 rows
+		// biome-ignore lint/style/noNonNullAssertion: fixture is known to have at least 3 rows
 		const item = toSourceItem(rows[2]!);
 		expect(item.text).toBe("");
 	});

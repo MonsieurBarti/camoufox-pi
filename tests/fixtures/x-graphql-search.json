@@ -1,29 +1,29 @@
 [
 	{
 		"id": "1700000000000000000",
-		"created_at": "2026-04-01T12:00:00.000Z",
-		"full_text": "Rust async really clicks when you stop fighting pin.",
-		"user": { "screen_name": "rustacean", "name": "Rusty" },
-		"favorite_count": 42,
-		"reply_count": 3,
-		"retweet_count": 7
+		"text": "Rust async really clicks when you stop fighting pin.",
+		"createdAt": "Wed Apr 01 12:00:00 +0000 2026",
+		"author": { "username": "rustacean", "name": "Rusty" },
+		"authorId": "1",
+		"likeCount": 42,
+		"replyCount": 3,
+		"retweetCount": 7
 	},
 	{
 		"id": "1700000000000000001",
-		"created_at": "2026-03-10T09:30:00.000Z",
-		"full_text": "old tweet — outside lookback window",
-		"user": { "screen_name": "oldposter", "name": null },
-		"favorite_count": 1,
-		"reply_count": 0,
-		"retweet_count": 0
+		"text": "old tweet — outside lookback window",
+		"createdAt": "Tue Mar 10 09:30:00 +0000 2026",
+		"author": { "username": "oldposter", "name": "Old Poster" },
+		"authorId": "2",
+		"likeCount": 1,
+		"replyCount": 0,
+		"retweetCount": 0
 	},
 	{
 		"id": "1700000000000000002",
-		"created_at": "2026-04-10T01:00:00.000Z",
-		"full_text": "",
-		"user": null,
-		"favorite_count": 0,
-		"reply_count": 0,
-		"retweet_count": 0
+		"text": "",
+		"createdAt": "Fri Apr 10 01:00:00 +0000 2026",
+		"author": { "username": "empty", "name": "Empty" },
+		"authorId": "3"
 	}
 ]

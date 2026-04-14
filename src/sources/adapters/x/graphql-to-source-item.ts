@@ -2,30 +2,28 @@ import type { SourceItem } from "../../source-item.js";
 
 export interface BirdSearchRow {
 	id: string;
-	created_at: string;
-	full_text?: string;
-	text?: string;
-	user: { screen_name: string; name: string | null } | null;
-	favorite_count?: number;
-	reply_count?: number;
-	retweet_count?: number;
+	text: string;
+	createdAt: string; // bird-search emits Twitter's raw format, parseable by new Date()
+	replyCount?: number;
+	retweetCount?: number;
+	likeCount?: number;
+	author: { username: string; name: string };
+	authorId?: string;
 }
 
 export function toSourceItem(row: BirdSearchRow): SourceItem {
-	const screenName = row.user?.screen_name ?? "i";
-	const body = row.full_text ?? row.text ?? "";
 	return {
 		source: "x",
 		id: row.id,
-		url: `https://x.com/${screenName}/status/${row.id}`,
+		url: `https://x.com/${row.author.username}/status/${row.id}`,
 		title: null,
-		text: body,
-		author: row.user?.screen_name ?? null,
-		publishedAt: new Date(row.created_at).toISOString(),
+		text: row.text,
+		author: row.author.username,
+		publishedAt: new Date(row.createdAt).toISOString(),
 		engagement: {
-			...(typeof row.favorite_count === "number" ? { score: row.favorite_count } : {}),
-			...(typeof row.reply_count === "number" ? { comments: row.reply_count } : {}),
-			...(typeof row.retweet_count === "number" ? { shares: row.retweet_count } : {}),
+			...(typeof row.likeCount === "number" ? { score: row.likeCount } : {}),
+			...(typeof row.replyCount === "number" ? { comments: row.replyCount } : {}),
+			...(typeof row.retweetCount === "number" ? { shares: row.retweetCount } : {}),
 		},
 	};
 }
