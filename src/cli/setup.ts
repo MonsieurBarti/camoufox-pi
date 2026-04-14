@@ -1,8 +1,10 @@
+import type { Launcher } from "../client/launcher.js";
 import type { CredentialBackend } from "../credentials/backend.js";
 import { createCredentialReader } from "../credentials/reader.js";
 import type { CredentialSpec } from "../credentials/types.js";
 import { makeNamespacedKey } from "../credentials/types.js";
 import type { SourceAdapter } from "../sources/types.js";
+import { captureCookieJar } from "./capture.js";
 import type { CliHandler } from "./index.js";
 import { promptLine as realPromptLine, promptSecret as realPromptSecret } from "./prompts.js";
 
@@ -10,6 +12,7 @@ export interface RunSetupDeps {
 	readonly mode: "full" | "check";
 	readonly adapters: readonly SourceAdapter[];
 	readonly backend: CredentialBackend;
+	readonly launcher: Launcher;
 	readonly log: (line: string) => void;
 	readonly promptLine: (msg: string) => Promise<string>;
 	readonly promptSecret: (msg: string) => Promise<string>;
@@ -112,8 +115,28 @@ async function handleCredential(
 	if (spec.loginUrl) deps.log(`  Login URL: ${spec.loginUrl}`);
 
 	if (spec.kind === "cookie_jar") {
-		deps.log("  [cookie_jar capture not yet implemented — will land in the next milestone]");
-		return false;
+		if (!spec.loginUrl) {
+			deps.log("  capture failed: cookie_jar spec missing loginUrl");
+			return false;
+		}
+		try {
+			const { storageStateJson } = await captureCookieJar({
+				source,
+				loginUrl: spec.loginUrl,
+				...(spec.loggedInUrlPattern !== undefined
+					? { loggedInUrlPattern: spec.loggedInUrlPattern }
+					: {}),
+				launcher: deps.launcher,
+				log: deps.log,
+				promptLine: deps.promptLine,
+			});
+			await deps.backend.set(makeNamespacedKey(source, spec.key), storageStateJson);
+			deps.log("  stored");
+			return true;
+		} catch (err) {
+			deps.log(`  capture failed: ${err instanceof Error ? err.message : String(err)}`);
+			return false;
+		}
 	}
 
 	const value = await deps.promptSecret(`  Paste ${spec.kind} (input hidden): `);
@@ -138,14 +161,9 @@ async function reaudit(
 }
 
 export function registerSetupHandlers(): Partial<Record<string, CliHandler>> {
-	// Real entry point: lazy-imports keyring backend. Unit tests inject via
-	// runSetup directly; this function exists so the CLI dispatcher in
-	// src/cli/index.ts can be wired without pulling client deps at type time.
 	const build = async (mode: "full" | "check"): Promise<number> => {
 		const { createKeyringBackend } = await import("../credentials/keyring-backend.js");
-		// No default-registered adapters in milestone 5. A real consumer passes
-		// adapters via createClient() — invoking setup CLI without registered
-		// adapters prints no rows and exits 0.
+		const { RealLauncher } = await import("../client/launcher.js");
 		const adapters: SourceAdapter[] = [];
 		let backend: CredentialBackend;
 		try {
@@ -158,6 +176,7 @@ export function registerSetupHandlers(): Partial<Record<string, CliHandler>> {
 			mode,
 			adapters,
 			backend,
+			launcher: new RealLauncher({ headless: false }),
 			log: (l) => console.log(l),
 			promptLine: realPromptLine,
 			promptSecret: realPromptSecret,
