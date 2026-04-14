@@ -31,4 +31,8 @@ describe("sortByPublishedDesc", () => {
 		sortByPublishedDesc(input);
 		expect(input.map((i) => i.id)).toEqual(["a", "b"]);
 	});
+
+	it("returns an empty array for empty input", () => {
+		expect(sortByPublishedDesc([])).toEqual([]);
+	});
 });
