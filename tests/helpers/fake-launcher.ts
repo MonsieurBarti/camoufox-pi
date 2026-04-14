@@ -109,6 +109,8 @@ export interface FakeLauncherOptions {
 	launchDelayMs?: number;
 	launchFails?: Error;
 	progressEvents?: BinaryDownloadProgressEvent[];
+	/** StorageState returned by context.storageState() */
+	storageState?: Awaited<ReturnType<BrowserContext["storageState"]>>;
 }
 
 export function makeFakeLauncher(
@@ -129,7 +131,17 @@ export function makeFakeLauncher(
 	const pageBehavior: (url: string) => FakePageResponse =
 		opts.pageBehavior ?? ((): FakePageResponse => ({ status: 200, html: "<html></html>" }));
 
-	const makePage = (): Page => {
+	// Shared URL state and waitForURL registry for a context.
+	// makeContext creates one of these per context instance.
+	interface ContextUrlState {
+		currentUrl: string;
+		waiters: Array<{
+			pattern: RegExp | string;
+			resolve: () => void;
+		}>;
+	}
+
+	const makePage = (urlState?: ContextUrlState): Page => {
 		controls.pagesOpened += 1;
 		let closed = false;
 		let currentUrl = "";
@@ -153,13 +165,14 @@ export function makeFakeLauncher(
 				if (behavior.gotoError) throw behavior.gotoError;
 				if (behavior.nullResponse) return null;
 				currentUrl = behavior.finalUrl ?? url;
+				if (urlState) urlState.currentUrl = currentUrl;
 				return {
 					status: () => behavior.status ?? 200,
 					url: () => behavior.finalUrl ?? url,
 				} as unknown as Response;
 			},
 			async content(): Promise<string> {
-				const behavior = pageBehavior(currentUrl);
+				const behavior = pageBehavior(urlState ? urlState.currentUrl : currentUrl);
 				if (behavior.contentDelayMs && behavior.contentDelayMs > 0) {
 					await new Promise((resolve) => setTimeout(resolve, behavior.contentDelayMs));
 				}
@@ -169,14 +182,29 @@ export function makeFakeLauncher(
 				return behavior.html ?? "<html></html>";
 			},
 			url(): string {
-				return currentUrl;
+				return urlState ? urlState.currentUrl : currentUrl;
+			},
+			async waitForURL(pattern: RegExp | string): Promise<void> {
+				const getUrl = () => (urlState ? urlState.currentUrl : currentUrl);
+				const matches = (u: string): boolean => {
+					if (pattern instanceof RegExp) return pattern.test(u);
+					return u.startsWith(pattern);
+				};
+				// Already matching — resolve immediately.
+				if (matches(getUrl())) return;
+				// Otherwise register a waiter on the context url state.
+				if (urlState) {
+					await new Promise<void>((resolve) => {
+						urlState.waiters.push({ pattern, resolve });
+					});
+				}
 			},
 			async $$eval<T>(
 				selector: string,
 				evaluator: (els: unknown[], ...args: unknown[]) => T,
 				...args: unknown[]
 			): Promise<T> {
-				const behavior = pageBehavior(currentUrl);
+				const behavior = pageBehavior(urlState ? urlState.currentUrl : currentUrl);
 				const results = behavior.evalResults;
 				if (results && selector in results) {
 					const value = results[selector];
@@ -201,7 +229,7 @@ export function makeFakeLauncher(
 				selector: string,
 				opts?: { state?: string; timeout?: number },
 			): Promise<void> {
-				const behavior = pageBehavior(currentUrl);
+				const behavior = pageBehavior(urlState ? urlState.currentUrl : currentUrl);
 				const b = behavior.waitForSelectorBehavior ?? "resolve";
 				if (b instanceof Error) throw b;
 				if (behavior.waitForSelectorDelayMs && behavior.waitForSelectorDelayMs > 0) {
@@ -218,7 +246,7 @@ export function makeFakeLauncher(
 				void selector;
 			},
 			locator(selector: string) {
-				const behavior = pageBehavior(currentUrl);
+				const behavior = pageBehavior(urlState ? urlState.currentUrl : currentUrl);
 				const match = behavior.selectorMatchHtml?.[selector];
 				const hasMatch = match !== undefined && match !== null;
 				const result = {
@@ -256,12 +284,12 @@ export function makeFakeLauncher(
 				quality?: number;
 			}): Promise<Buffer> {
 				void opts;
-				const behavior = pageBehavior(currentUrl);
+				const behavior = pageBehavior(urlState ? urlState.currentUrl : currentUrl);
 				if (behavior.screenshotBytes instanceof Error) throw behavior.screenshotBytes;
 				return behavior.screenshotBytes ?? Buffer.from("fake-png");
 			},
 			async evaluate<T>(_fn: () => T): Promise<T> {
-				const behavior = pageBehavior(currentUrl);
+				const behavior = pageBehavior(urlState ? urlState.currentUrl : currentUrl);
 				// The only page.evaluate() call in production today is the
 				// scroll-dimensions probe for full_page screenshots. Return
 				// the configured dimensions (defaults to a small viewport)
@@ -332,17 +360,58 @@ export function makeFakeLauncher(
 	const makeContext = (): BrowserContext => {
 		controls.contextsOpened += 1;
 		let ctxClosed = false;
-		return {
+
+		const urlState: ContextUrlState = { currentUrl: "", waiters: [] };
+
+		// Close-listener registry: persistent (on) and one-time (once).
+		const closeListeners: Array<(ctx: unknown) => void> = [];
+		const onceListeners: Array<(ctx: unknown) => void> = [];
+
+		const ctx = {
 			async newPage(): Promise<Page> {
-				return makePage();
+				return makePage(urlState);
 			},
 			async close(): Promise<void> {
 				if (!ctxClosed) {
 					ctxClosed = true;
 					controls.contextsClosed += 1;
 				}
+				// Fire once-listeners first (removes them), then persistent listeners.
+				const snapshot = onceListeners.splice(0);
+				for (const fn of snapshot) fn(ctx);
+				for (const fn of closeListeners) fn(ctx);
+			},
+			async storageState(): Promise<Awaited<ReturnType<BrowserContext["storageState"]>>> {
+				return (opts.storageState ?? { cookies: [], origins: [] }) as Awaited<
+					ReturnType<BrowserContext["storageState"]>
+				>;
+			},
+			on(event: string, handler: (arg: unknown) => void): unknown {
+				if (event === "close") closeListeners.push(handler);
+				return ctx;
+			},
+			once(event: string, handler: (arg: unknown) => void): unknown {
+				if (event === "close") onceListeners.push(handler);
+				return ctx;
+			},
+			/** Test-only escape hatch: set the shared URL and resolve matching waiters. */
+			__setPageUrl(url: string): void {
+				urlState.currentUrl = url;
+				const remaining: typeof urlState.waiters = [];
+				for (const w of urlState.waiters) {
+					const matches =
+						w.pattern instanceof RegExp ? w.pattern.test(url) : url.startsWith(w.pattern);
+					if (matches) {
+						w.resolve();
+					} else {
+						remaining.push(w);
+					}
+				}
+				urlState.waiters = remaining;
 			},
 		} as unknown as BrowserContext;
+
+		return ctx;
 	};
 
 	const defaultContext = makeContext();
