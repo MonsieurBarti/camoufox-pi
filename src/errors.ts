@@ -58,6 +58,11 @@ export type CamoufoxError =
 			type: "credential_backend_unavailable";
 			backend: "keyring" | "file";
 			reason: string;
+	  }
+	| {
+			type: "session_expired";
+			source: string;
+			credentialKey: string;
 	  };
 
 // Strip absolute/file-URL paths and truncate before embedding third-party
