@@ -435,6 +435,12 @@ export class CamoufoxClient {
 		return fetchSources(query, orchestratorOpts);
 	}
 
+	/**
+	 * Lazy-init the credential backend on first source call. Concurrent calls
+	 * race harmlessly: two parallel keyring loads both succeed and the second
+	 * overwrites the first with an equivalent backend. Failure is not cached
+	 * (rethrown each time), so a user fixing keyring mid-session can retry.
+	 */
 	private async getOrInitCredentialBackend(): Promise<CredentialBackend> {
 		if (this.credentialBackendCache) return this.credentialBackendCache;
 		const cfg = this.credentialsConfig;
@@ -449,6 +455,7 @@ export class CamoufoxClient {
 			this.credentialBackendCache = cfg.customBackend;
 			return this.credentialBackendCache;
 		}
+		// No credentials config, or backend !== "custom" → default to keyring.
 		try {
 			this.credentialBackendCache = await createKeyringBackend();
 		} catch (err) {

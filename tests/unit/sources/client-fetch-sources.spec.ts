@@ -50,4 +50,19 @@ describe("client.fetchSources", () => {
 		expect(res.items).toHaveLength(1);
 		expect(res.errors).toEqual([]);
 	});
+
+	it("throws config_invalid when backend is 'custom' but customBackend is missing", async () => {
+		const client = createClient({
+			launcher: makeFakeLauncher(),
+			sources: [redditAdapter()],
+			credentials: { backend: "custom" },
+			httpFetch: async () => ({ status: 200, headers: {}, body: "{}", url: "" }),
+		});
+		await expect(client.fetchSources("rust", { sources: ["reddit"] })).rejects.toMatchObject({
+			err: {
+				type: "config_invalid",
+				field: "credentials.customBackend",
+			},
+		});
+	});
 });
