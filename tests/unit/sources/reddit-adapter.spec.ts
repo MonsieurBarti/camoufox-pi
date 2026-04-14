@@ -106,4 +106,38 @@ describe("redditAdapter", () => {
 			err: { type: "source_unavailable", source: "reddit" },
 		});
 	});
+
+	it("maps 429 without Retry-After to source_rate_limited without retryAfterSec", async () => {
+		const adapter = redditAdapter();
+		const ctx = makeCtx({
+			httpFetch: async () => ({
+				status: 429,
+				headers: {},
+				body: "",
+				url: "https://www.reddit.com/search.json",
+			}),
+		});
+		try {
+			await adapter.fetch("x", { lookbackDays: 30, limit: 10 }, ctx);
+			throw new Error("expected throw");
+		} catch (err) {
+			const e = err as import("../../../src/errors.js").CamoufoxErrorBox;
+			expect(e.err).toEqual({ type: "source_rate_limited", source: "reddit" });
+		}
+	});
+
+	it("maps 403 to source_unavailable", async () => {
+		const adapter = redditAdapter();
+		const ctx = makeCtx({
+			httpFetch: async () => ({
+				status: 403,
+				headers: {},
+				body: "",
+				url: "https://www.reddit.com/search.json",
+			}),
+		});
+		await expect(adapter.fetch("x", { lookbackDays: 30, limit: 10 }, ctx)).rejects.toMatchObject({
+			err: { type: "source_unavailable", source: "reddit", cause: "HTTP 403" },
+		});
+	});
 });

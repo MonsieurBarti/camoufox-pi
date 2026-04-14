@@ -45,13 +45,6 @@ export function redditAdapter(): SourceAdapter {
 					...(Number.isFinite(parsed) ? { retryAfterSec: parsed } : {}),
 				});
 			}
-			if (res.status >= 500 || res.status === 403) {
-				throw new CamoufoxErrorBox({
-					type: "source_unavailable",
-					source: "reddit",
-					cause: `HTTP ${res.status}`,
-				});
-			}
 			if (res.status !== 200) {
 				throw new CamoufoxErrorBox({
 					type: "source_unavailable",
