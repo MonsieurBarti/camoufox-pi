@@ -17,6 +17,7 @@ export interface RunSetupDeps {
 	readonly promptLine: (msg: string) => Promise<string>;
 	readonly promptSecret: (msg: string) => Promise<string>;
 	readonly refreshSource?: string;
+	readonly signal?: AbortSignal;
 }
 
 interface AuditRow {
@@ -133,6 +134,7 @@ async function handleCredential(
 				launcher: deps.launcher,
 				log: deps.log,
 				promptLine: deps.promptLine,
+				...(deps.signal !== undefined ? { signal: deps.signal } : {}),
 			});
 			await deps.backend.set(makeNamespacedKey(source, spec.key), storageStateJson);
 			deps.log("  stored");

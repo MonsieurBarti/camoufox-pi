@@ -1,13 +1,18 @@
+// Set CAMOUFOX_INTEGRATION=1 to run this test (requires camoufox binary).
+// Without the env var, the describe block is skipped so CI does not hang.
 import { type Server, createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { captureCookieJar } from "../../src/cli/capture.js";
 import { RealLauncher } from "../../src/client/launcher.js";
 
+const runIntegration = process.env.CAMOUFOX_INTEGRATION === "1";
+
 let server: Server;
 let baseUrl: string;
 
 beforeAll(async () => {
+	if (!runIntegration) return;
 	server = createServer((req, res) => {
 		if (req.url === "/login") {
 			res.setHeader("set-cookie", [
@@ -35,11 +40,15 @@ beforeAll(async () => {
 afterAll(
 	() =>
 		new Promise<void>((resolve) => {
+			if (!server) {
+				resolve();
+				return;
+			}
 			server.close(() => resolve());
 		}),
 );
 
-describe("captureCookieJar integration (headless)", () => {
+describe.skipIf(!runIntegration)("captureCookieJar integration (headless)", () => {
 	it("captures cookies after URL watcher fires", async () => {
 		const result = await captureCookieJar({
 			source: "x",

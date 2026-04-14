@@ -13,7 +13,10 @@ export function xAdapter(): SourceAdapter {
 				key: "cookies",
 				description: "X (Twitter) session cookies for search access",
 				loginUrl: "https://x.com/login",
-				loggedInUrlPattern: /^https:\/\/x\.com\/(home|i\/|[^/]+\/?$)/,
+				// Matches logged-in-looking URLs. Excludes login/signup/logout flow pages
+				// so we don't false-positive on a user still in the auth flow.
+				loggedInUrlPattern:
+					/^https:\/\/x\.com\/(?:home|i\/(?!flow)[^?#/]+|(?!login\b|logout\b|signup\b|i\b|oauth\b)[^/]+\/?$)/,
 			},
 		],
 		async fetch(query, opts, ctx) {

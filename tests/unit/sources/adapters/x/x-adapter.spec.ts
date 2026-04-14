@@ -32,6 +32,22 @@ describe("xAdapter", () => {
 		expect(a.requiredCredentials[0]?.loggedInUrlPattern).toBeInstanceOf(RegExp);
 	});
 
+	describe("loggedInUrlPattern", () => {
+		const pattern = xAdapter().requiredCredentials[0]?.loggedInUrlPattern as RegExp;
+
+		it.each([
+			["https://x.com/home", true],
+			["https://x.com/i/bookmarks", true],
+			["https://x.com/rustacean", true],
+			["https://x.com/i/flow/login", false],
+			["https://x.com/login", false],
+			["https://x.com/logout", false],
+			["https://x.com/signup", false],
+		])("%s → %s", (url, expected) => {
+			expect(pattern.test(url)).toBe(expected);
+		});
+	});
+
 	it("throws credential_missing when no cookies stored", async () => {
 		const backend = createFakeCredentialBackend();
 		const credentials = createCredentialReader(backend, "x");
