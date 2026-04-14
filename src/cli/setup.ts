@@ -16,6 +16,7 @@ export interface RunSetupDeps {
 	readonly log: (line: string) => void;
 	readonly promptLine: (msg: string) => Promise<string>;
 	readonly promptSecret: (msg: string) => Promise<string>;
+	readonly refreshSource?: string;
 }
 
 interface AuditRow {
@@ -28,6 +29,9 @@ interface AuditRow {
 }
 
 export async function runSetup(deps: RunSetupDeps): Promise<number> {
+	if (deps.refreshSource !== undefined) {
+		return runRefresh(deps, deps.refreshSource);
+	}
 	deps.log("camoufox-pi setup — audit");
 	if (deps.adapters.length === 0) {
 		deps.log("");
@@ -160,11 +164,35 @@ async function reaudit(
 	log(value !== null ? "  re-audit: ok" : "  re-audit: still missing");
 }
 
-export function registerSetupHandlers(): Partial<Record<string, CliHandler>> {
-	const build = async (mode: "full" | "check"): Promise<number> => {
+async function runRefresh(deps: RunSetupDeps, sourceName: string): Promise<number> {
+	const adapter = deps.adapters.find((a) => a.name === sourceName);
+	if (!adapter) {
+		deps.log(`unknown source: ${sourceName}`);
+		deps.log(`registered: ${deps.adapters.map((a) => a.name).join(", ") || "(none)"}`);
+		return 2;
+	}
+	for (const spec of adapter.requiredCredentials) {
+		if (spec.kind !== "cookie_jar") {
+			deps.log(
+				`  skip ${spec.key} — use setup (without --refresh) to change ${spec.kind} credentials`,
+			);
+			continue;
+		}
+		await deps.backend.delete(makeNamespacedKey(sourceName, spec.key));
+		const handled = await handleCredential(sourceName, spec, deps);
+		if (!handled) return 1;
+	}
+	const rows = await audit([adapter], deps.backend);
+	printAudit(rows, deps.log);
+	return rows.every((r) => r.credentials.every((c) => c.status === "ok")) ? 0 : 1;
+}
+
+export function registerSetupHandlers(
+	adapters: SourceAdapter[] = [],
+): Partial<Record<string, CliHandler>> {
+	const build = async (mode: "full" | "check", refreshSource?: string): Promise<number> => {
 		const { createKeyringBackend } = await import("../credentials/keyring-backend.js");
 		const { RealLauncher } = await import("../client/launcher.js");
-		const adapters: SourceAdapter[] = [];
 		let backend: CredentialBackend;
 		try {
 			backend = await createKeyringBackend();
@@ -180,10 +208,16 @@ export function registerSetupHandlers(): Partial<Record<string, CliHandler>> {
 			log: (l) => console.log(l),
 			promptLine: realPromptLine,
 			promptSecret: realPromptSecret,
+			...(refreshSource !== undefined ? { refreshSource } : {}),
 		});
 	};
-	return {
+
+	const handlers: Partial<Record<string, CliHandler>> = {
 		setup: () => build("full"),
 		"setup:check": () => build("check"),
 	};
+	for (const a of adapters) {
+		handlers[`setup:refresh:${a.name}`] = () => build("full", a.name);
+	}
+	return handlers;
 }
