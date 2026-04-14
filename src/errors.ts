@@ -29,6 +29,35 @@ export type CamoufoxError =
 				| "consent_drift"
 				| "empty_results"
 				| "navigation_failed";
+	  }
+	| {
+			type: "credential_missing";
+			source: string;
+			credentialKey: string;
+	  }
+	| {
+			type: "credential_invalid";
+			source: string;
+			credentialKey: string;
+	  }
+	| {
+			type: "source_rate_limited";
+			source: string;
+			retryAfterSec?: number;
+	  }
+	| {
+			type: "source_unavailable";
+			source: string;
+			cause?: string;
+	  }
+	| {
+			type: "all_sources_failed";
+			errors: Array<{ source: string; error: CamoufoxError }>;
+	  }
+	| {
+			type: "credential_backend_unavailable";
+			backend: "keyring" | "file";
+			reason: string;
 	  };
 
 // Strip absolute/file-URL paths and truncate before embedding third-party

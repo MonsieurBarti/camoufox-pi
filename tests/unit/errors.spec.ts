@@ -151,3 +151,49 @@ describe("mapPlaywrightError", () => {
 		expect(mapped).toEqual({ type: "timeout", phase: "screenshot", elapsedMs: 50 });
 	});
 });
+
+describe("source error variants", () => {
+	it("credential_missing serializes source and key without leaking secret", () => {
+		const box = new CamoufoxErrorBox({
+			type: "credential_missing",
+			source: "x",
+			credentialKey: "cookies",
+		});
+		expect(box.err).toEqual({
+			type: "credential_missing",
+			source: "x",
+			credentialKey: "cookies",
+		});
+		expect(box.message).toContain("credential_missing");
+		expect(box.message).toContain('"source":"x"');
+	});
+
+	it("source_rate_limited carries retryAfterSec when set", () => {
+		const box = new CamoufoxErrorBox({
+			type: "source_rate_limited",
+			source: "reddit",
+			retryAfterSec: 60,
+		});
+		expect((box.err as { retryAfterSec?: number }).retryAfterSec).toBe(60);
+	});
+
+	it("all_sources_failed nests per-source errors", () => {
+		const box = new CamoufoxErrorBox({
+			type: "all_sources_failed",
+			errors: [
+				{ source: "reddit", error: { type: "source_unavailable", source: "reddit" } },
+				{ source: "hn", error: { type: "source_rate_limited", source: "hn" } },
+			],
+		});
+		expect((box.err as { errors: unknown[] }).errors).toHaveLength(2);
+	});
+
+	it("credential_backend_unavailable carries backend identifier", () => {
+		const box = new CamoufoxErrorBox({
+			type: "credential_backend_unavailable",
+			backend: "keyring",
+			reason: "libsecret not installed",
+		});
+		expect(box.message).toContain("keyring");
+	});
+});
