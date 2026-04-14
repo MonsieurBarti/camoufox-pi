@@ -14,6 +14,8 @@ export interface HttpFetchInit {
 
 export interface HttpResponse {
 	readonly status: number;
+	/** Lowercased header names. HTTP headers are case-insensitive; this
+	 * normalization is stable so adapters can look up e.g. "retry-after". */
 	readonly headers: Readonly<Record<string, string>>;
 	readonly body: string;
 	readonly url: string;
@@ -81,6 +83,8 @@ export function createHttpFetch(opts: CreateHttpFetchOptions): HttpFetch {
 			});
 			return response;
 		} catch (err) {
+			// Tie-break: if both the internal timer and external signal fired, the
+			// external cancellation wins (aborted) — checked via init.signal.aborted.
 			if (combinedSignal.aborted && !init.signal?.aborted) {
 				throw new CamoufoxErrorBox({
 					type: "timeout",
