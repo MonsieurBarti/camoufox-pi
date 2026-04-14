@@ -85,16 +85,29 @@ function redactSensitiveStrings(s: string): string {
 		.replace(ENV_VAR_RE, "<redacted>");
 }
 
-function sanitizeForMessage(err: CamoufoxError): string {
-	// Scrub sensitive strings first, then cap stderr, then strip URL query
-	// strings. Redacting before capping prevents the greedy path/env-var
-	// regexes from consuming the truncation marker at the cut boundary.
+function redactErrorFields(err: CamoufoxError): Record<string, unknown> {
 	const redacted: Record<string, unknown> = { ...err };
 	for (const key of Object.keys(redacted)) {
 		const v = redacted[key];
 		if (typeof v === "string") {
 			redacted[key] = redactSensitiveStrings(v);
 		}
+	}
+	return redacted;
+}
+
+function sanitizeForMessage(err: CamoufoxError): string {
+	// Scrub sensitive strings first, then cap stderr, then strip URL query
+	// strings. Redacting before capping prevents the greedy path/env-var
+	// regexes from consuming the truncation marker at the cut boundary.
+	const redacted: Record<string, unknown> = redactErrorFields(err);
+
+	// Recursively redact nested CamoufoxError objects in all_sources_failed.
+	if (err.type === "all_sources_failed") {
+		redacted.errors = err.errors.map(({ source, error }) => ({
+			source,
+			error: redactErrorFields(error),
+		}));
 	}
 	if (typeof redacted.stderr === "string" && redacted.stderr.length > 500) {
 		redacted.stderr = `${redacted.stderr.slice(0, 500)}…[${redacted.stderr.length} bytes]`;
