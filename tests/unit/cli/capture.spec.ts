@@ -36,3 +36,57 @@ describe("captureCookieJar — Enter wins", () => {
 		expect(log.join("\n")).toContain("https://x.com/login");
 	});
 });
+
+describe("captureCookieJar — URL watcher wins", () => {
+	it("resolves when loggedInUrlPattern matches before Enter is pressed", async () => {
+		const launcher = makeFakeLauncher({
+			storageState: {
+				cookies: [
+					{
+						name: "ct0",
+						value: "xxx",
+						domain: ".x.com",
+						path: "/",
+						expires: -1,
+						httpOnly: false,
+						secure: true,
+						sameSite: "Lax",
+					},
+				],
+				origins: [],
+			},
+		});
+		// Prompt resolves never (so URL watcher must win).
+		let enterResolve: ((v: string) => void) | undefined;
+		const promptPromise = new Promise<string>((r) => {
+			enterResolve = r;
+		});
+
+		const launched = await launcher.launch();
+		// Relaunch via the real capture path — we need the context to drive URL.
+		const capturePromise = captureCookieJar({
+			source: "x",
+			loginUrl: "https://x.com/login",
+			loggedInUrlPattern: /^https:\/\/x\.com\/home/,
+			launcher: { launch: async () => launched },
+			log: () => {},
+			promptLine: () => promptPromise,
+		});
+
+		// Flip the fake URL; waitForURL resolves, capture completes.
+		// Use setImmediate to ensure waitForURL is registered first.
+		await new Promise((resolve) => {
+			setImmediate(() => {
+				(launched.context as unknown as { __setPageUrl(u: string): void }).__setPageUrl(
+					"https://x.com/home",
+				);
+				resolve(undefined);
+			});
+		});
+
+		const result = await capturePromise;
+		expect(JSON.parse(result.storageStateJson).cookies[0].name).toBe("ct0");
+		// Cleanup the dangling prompt.
+		enterResolve?.("");
+	});
+});
