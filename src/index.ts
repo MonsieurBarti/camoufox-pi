@@ -57,6 +57,7 @@ export type {
 } from "./sources/types.js";
 export type { SourceItem } from "./sources/source-item.js";
 export { redditAdapter } from "./sources/adapters/reddit.js";
+export { xAdapter } from "./sources/adapters/x.js";
 
 // Credentials (milestone 5)
 export type { CredentialBackend } from "./credentials/backend.js";

@@ -3,6 +3,7 @@ import "./formats.js";
 import { Type } from "@sinclair/typebox";
 
 import type { CamoufoxClient } from "../client/camoufox-client.js";
+import { formatAgentMessage } from "../errors/format.js";
 import type { ToolDefinition } from "./types.js";
 
 export const fetchSourcesParams = Type.Object({
@@ -69,6 +70,7 @@ export function createFetchSourcesTool(
 					errors: result.errors.map((e) => ({
 						source: e.source,
 						type: e.error.type,
+						message: formatAgentMessage(e.error),
 					})),
 					stats: result.stats.map((s) => ({ ...s })),
 				},

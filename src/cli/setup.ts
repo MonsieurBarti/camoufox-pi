@@ -1,8 +1,11 @@
+import type { Launcher } from "../client/launcher.js";
 import type { CredentialBackend } from "../credentials/backend.js";
 import { createCredentialReader } from "../credentials/reader.js";
+import { assertCookieJarSpec } from "../credentials/types.js";
 import type { CredentialSpec } from "../credentials/types.js";
 import { makeNamespacedKey } from "../credentials/types.js";
 import type { SourceAdapter } from "../sources/types.js";
+import { captureCookieJar } from "./capture.js";
 import type { CliHandler } from "./index.js";
 import { promptLine as realPromptLine, promptSecret as realPromptSecret } from "./prompts.js";
 
@@ -10,9 +13,12 @@ export interface RunSetupDeps {
 	readonly mode: "full" | "check";
 	readonly adapters: readonly SourceAdapter[];
 	readonly backend: CredentialBackend;
+	readonly launcher: Launcher;
 	readonly log: (line: string) => void;
 	readonly promptLine: (msg: string) => Promise<string>;
 	readonly promptSecret: (msg: string) => Promise<string>;
+	readonly refreshSource?: string;
+	readonly signal?: AbortSignal;
 }
 
 interface AuditRow {
@@ -25,6 +31,9 @@ interface AuditRow {
 }
 
 export async function runSetup(deps: RunSetupDeps): Promise<number> {
+	if (deps.refreshSource !== undefined) {
+		return runRefresh(deps, deps.refreshSource);
+	}
 	deps.log("camoufox-pi setup — audit");
 	if (deps.adapters.length === 0) {
 		deps.log("");
@@ -112,8 +121,31 @@ async function handleCredential(
 	if (spec.loginUrl) deps.log(`  Login URL: ${spec.loginUrl}`);
 
 	if (spec.kind === "cookie_jar") {
-		deps.log("  [cookie_jar capture not yet implemented — will land in the next milestone]");
-		return false;
+		try {
+			assertCookieJarSpec(spec);
+		} catch (err) {
+			deps.log(`  capture failed: ${err instanceof Error ? err.message : String(err)}`);
+			return false;
+		}
+		try {
+			const { storageStateJson } = await captureCookieJar({
+				source,
+				loginUrl: spec.loginUrl,
+				...(spec.loggedInUrlPattern !== undefined
+					? { loggedInUrlPattern: spec.loggedInUrlPattern }
+					: {}),
+				launcher: deps.launcher,
+				log: deps.log,
+				promptLine: deps.promptLine,
+				...(deps.signal !== undefined ? { signal: deps.signal } : {}),
+			});
+			await deps.backend.set(makeNamespacedKey(source, spec.key), storageStateJson);
+			deps.log("  stored");
+			return true;
+		} catch (err) {
+			deps.log(`  capture failed: ${err instanceof Error ? err.message : String(err)}`);
+			return false;
+		}
 	}
 
 	const value = await deps.promptSecret(`  Paste ${spec.kind} (input hidden): `);
@@ -137,16 +169,38 @@ async function reaudit(
 	log(value !== null ? "  re-audit: ok" : "  re-audit: still missing");
 }
 
-export function registerSetupHandlers(): Partial<Record<string, CliHandler>> {
-	// Real entry point: lazy-imports keyring backend. Unit tests inject via
-	// runSetup directly; this function exists so the CLI dispatcher in
-	// src/cli/index.ts can be wired without pulling client deps at type time.
-	const build = async (mode: "full" | "check"): Promise<number> => {
+async function runRefresh(deps: RunSetupDeps, sourceName: string): Promise<number> {
+	const adapter = deps.adapters.find((a) => a.name === sourceName);
+	if (!adapter) {
+		deps.log(`unknown source: ${sourceName}`);
+		deps.log(`registered: ${deps.adapters.map((a) => a.name).join(", ") || "(none)"}`);
+		return 2;
+	}
+	for (const spec of adapter.requiredCredentials) {
+		if (spec.kind !== "cookie_jar") {
+			deps.log(
+				`  skip ${spec.key} — use setup (without --refresh) to change ${spec.kind} credentials`,
+			);
+			continue;
+		}
+		// Capture first, then store on success. The previous behavior deleted the
+		// stored credential before capturing, which wiped the working session if
+		// the user aborted mid-capture. handleCredential calls backend.set() on
+		// success, which atomically overwrites the old value — no explicit delete needed.
+		const handled = await handleCredential(sourceName, spec, deps);
+		if (!handled) return 1;
+	}
+	const rows = await audit([adapter], deps.backend);
+	printAudit(rows, deps.log);
+	return rows.every((r) => r.credentials.every((c) => c.status === "ok")) ? 0 : 1;
+}
+
+export function registerSetupHandlers(
+	adapters: SourceAdapter[] = [],
+): Partial<Record<string, CliHandler>> {
+	const build = async (mode: "full" | "check", refreshSource?: string): Promise<number> => {
 		const { createKeyringBackend } = await import("../credentials/keyring-backend.js");
-		// No default-registered adapters in milestone 5. A real consumer passes
-		// adapters via createClient() — invoking setup CLI without registered
-		// adapters prints no rows and exits 0.
-		const adapters: SourceAdapter[] = [];
+		const { RealLauncher } = await import("../client/launcher.js");
 		let backend: CredentialBackend;
 		try {
 			backend = await createKeyringBackend();
@@ -158,13 +212,20 @@ export function registerSetupHandlers(): Partial<Record<string, CliHandler>> {
 			mode,
 			adapters,
 			backend,
+			launcher: new RealLauncher({ headless: false }),
 			log: (l) => console.log(l),
 			promptLine: realPromptLine,
 			promptSecret: realPromptSecret,
+			...(refreshSource !== undefined ? { refreshSource } : {}),
 		});
 	};
-	return {
+
+	const handlers: Partial<Record<string, CliHandler>> = {
 		setup: () => build("full"),
 		"setup:check": () => build("check"),
 	};
+	for (const a of adapters) {
+		handlers[`setup:refresh:${a.name}`] = () => build("full", a.name);
+	}
+	return handlers;
 }
